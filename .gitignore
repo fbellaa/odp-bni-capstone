@@ -1,0 +1,30 @@
+data/
+*.csv
+*.parquet
+!data/**/.gitkeep
+
+# secret key
+.env
+*.key
+
+# model dan eksperimen
+mlruns/
+*.pkl
+*.joblib
+
+# python
+__pycache__/
+.venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# DAG airflow
+logs/
+airflow.db
+
+# dbt
+target/
+dbt_packages/
+
+.DS_Store
+.vscode/
