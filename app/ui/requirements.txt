@@ -1,5 +1,7 @@
 streamlit==1.42.0
 requests
 pandas
+numpy
 plotly
+networkx
 python-dotenv
