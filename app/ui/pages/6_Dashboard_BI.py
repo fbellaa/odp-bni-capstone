@@ -17,14 +17,17 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from lib import dummy_data
-from lib.format import rupiah
+from lib.format import miliar, persen, rupiah
 from lib.tampilan import setup_halaman, sidebar_status
 
 setup_halaman("Dashboard BI", "📈")
 sidebar_status()
 
 st.title("6 · Dashboard BI")
-st.caption("Lapisan eksekutif dan operasional disajikan melalui Metabase di belakang reverse proxy.")
+st.caption(
+    "Lapisan eksekutif dan operasional portofolio komersial disajikan melalui Metabase "
+    "di belakang reverse proxy."
+)
 
 # Di susunan docker-compose, nginx meneruskan /bi/ ke metabase:3000.
 METABASE_URL = os.getenv("METABASE_EMBED_URL", "")
@@ -42,12 +45,14 @@ st.info(
 )
 
 df = dummy_data.daftar_pengajuan()
+grup = dummy_data.daftar_grup()
 
-k1, k2, k3, k4 = st.columns(4)
+k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("Pengajuan 6 bulan", f"{len(df):,}".replace(",", "."))
-k2.metric("Disetujui", f"{(df['keputusan'] == 'SETUJU').mean() * 100:.1f}%".replace(".", ","))
+k2.metric("Disetujui", persen((df["keputusan"] == "SETUJU").mean()))
 k3.metric("Volume usulan limit", rupiah(df["limit_usulan"].sum(), singkat=True))
 k4.metric("Expected loss", rupiah(df["expected_loss"].sum(), singkat=True))
+k5.metric("Grup di atas 80% BMPK", int((grup["porsi_bmpk"] >= 0.80).sum()))
 
 bulanan = (
     df.assign(bulan=df["tanggal"].dt.to_period("M").dt.to_timestamp())
@@ -58,32 +63,52 @@ bulanan = (
 c1, c2 = st.columns(2)
 with c1:
     fig = px.bar(bulanan, x="bulan", y="jumlah", color="keputusan",
+                 color_discrete_map={"SETUJU": "#1b7f4b", "SETUJU DENGAN SYARAT": "#b58900",
+                                     "PERLU PENYESUAIAN": "#c9721c", "TOLAK": "#c0392b"},
                  labels={"bulan": "Bulan", "jumlah": "Jumlah pengajuan", "keputusan": "Keputusan"})
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Pengajuan per bulan menurut keputusan")
+                      title="Pengajuan komersial per bulan menurut keputusan")
     st.plotly_chart(fig, use_container_width=True)
 with c2:
-    per_wilayah = df.groupby("wilayah", as_index=False).agg(
+    per_fasilitas = df.groupby("jenis_fasilitas", as_index=False).agg(
         limit=("limit_usulan", "sum"), pd_rata=("pd", "mean")
     )
-    fig = px.bar(per_wilayah.sort_values("limit"), x="limit", y="wilayah", orientation="h",
-                 color="pd_rata", color_continuous_scale="RdYlGn_r",
-                 labels={"limit": "Usulan limit (Rp)", "wilayah": "", "pd_rata": "PD rata"})
+    per_fasilitas["limit_miliar"] = per_fasilitas["limit"] / 1e9
+    fig = px.bar(per_fasilitas.sort_values("limit_miliar"), x="limit_miliar", y="jenis_fasilitas",
+                 orientation="h", color="pd_rata", color_continuous_scale="RdYlGn_r",
+                 labels={"limit_miliar": "Usulan limit (Rp miliar)", "jenis_fasilitas": "",
+                         "pd_rata": "PD rata"})
     fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Usulan penyaluran per wilayah")
+                      title="Usulan penyaluran per jenis fasilitas")
     st.plotly_chart(fig, use_container_width=True)
 
-# Pengajuan yang ditolak berlimit nol; disaring supaya bobot treemap tidak nol.
-disalurkan = df[df["limit_usulan"] > 0]
-fig = px.treemap(
-    disalurkan, path=["sektor", "grade"], values="limit_usulan", color="pd",
-    color_continuous_scale="RdYlGn_r",
-    labels={"limit_usulan": "Usulan limit", "pd": "PD"},
-)
-fig.update_layout(height=470, margin=dict(l=10, r=10, t=40, b=10),
-                  title="Komposisi usulan penyaluran per sektor dan grade")
-st.plotly_chart(fig, use_container_width=True)
-st.caption("Hanya pengajuan dengan usulan limit di atas nol yang masuk ke komposisi ini.")
+c3, c4 = st.columns([3, 2])
+with c3:
+    # Pengajuan yang ditolak berlimit nol; disaring supaya bobot treemap tidak nol.
+    disalurkan = df[df["limit_usulan"] > 0]
+    fig = px.treemap(
+        disalurkan, path=["sektor", "grade"], values="limit_usulan", color="pd",
+        color_continuous_scale="RdYlGn_r",
+        labels={"limit_usulan": "Usulan limit", "pd": "PD"},
+    )
+    fig.update_layout(height=470, margin=dict(l=10, r=10, t=40, b=10),
+                      title="Komposisi usulan penyaluran per sektor dan rating internal")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Hanya pengajuan dengan usulan limit di atas nol yang masuk ke komposisi ini.")
+with c4:
+    atas = grup.nlargest(8, "eksposur_grup").copy()
+    atas["eksposur_miliar"] = atas["eksposur_grup"] / 1e9
+    fig = px.bar(atas.sort_values("eksposur_miliar"), x="eksposur_miliar", y="grup_usaha",
+                 orientation="h", color="porsi_bmpk", color_continuous_scale="RdYlGn_r",
+                 labels={"eksposur_miliar": "Eksposur gabungan (Rp miliar)", "grup_usaha": "",
+                         "porsi_bmpk": "Porsi BMPK"})
+    fig.update_layout(height=470, margin=dict(l=10, r=10, t=40, b=10),
+                      title="Delapan grup usaha dengan eksposur terbesar")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"Eksposur gabungan terbesar {miliar(grup['eksposur_grup'].max(), 0)} dari batas "
+        f"{miliar(grup['eksposur_grup'].max() / max(grup['porsi_bmpk'].max(), 1e-9), 0)}."
+    )
 
 with st.expander("Catatan penempatan Metabase pada susunan layanan"):
     st.code(
