@@ -1,7 +1,7 @@
 """Halaman 5 — Kesehatan model.
 
-Metrik berjalan, indeks stabilitas populasi, hasil uji ablasi fitur graf, dan
-kelulusan uji kualitas data.
+Metrik berjalan, indeks stabilitas populasi, hasil uji ablasi fitur graf,
+evaluasi lapisan agen dan RAG kepatuhan, serta kelulusan uji kualitas data.
 """
 from __future__ import annotations
 
@@ -21,24 +21,29 @@ setup_halaman("Kesehatan model", "🩺")
 sidebar_status()
 
 st.title("5 · Kesehatan model")
-st.caption("Metrik berjalan, stabilitas populasi, kontribusi lapisan graf, dan gerbang kualitas data.")
+st.caption(
+    "Metrik berjalan model kredit komersial, stabilitas populasi, kontribusi lapisan graf, "
+    "evaluasi agen dan RAG kepatuhan, serta gerbang kualitas data."
+)
 
 metrik = dummy_data.metrik_model()
 ablasi = dummy_data.uji_ablasi_graf()
 psi = dummy_data.population_stability()
 gerbang = dummy_data.gerbang_kualitas_data()
+agen = dummy_data.evaluasi_agen()
 
 utama = metrik.iloc[0]
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("AUC model PD", f"{utama['auc']:.3f}")
+k1.metric("AUC model PD komersial", f"{utama['auc']:.3f}")
 k2.metric("Gini", f"{utama['gini']:.3f}")
 k3.metric("Kolmogorov-Smirnov", f"{utama['ks']:.3f}")
 k4.metric("Brier score", f"{utama['brier']:.3f}", help="Semakin kecil semakin baik kalibrasi.")
 
 st.divider()
 
-tab_metrik, tab_ablasi, tab_psi, tab_kualitas = st.tabs(
-    ["Metrik per model", "Uji ablasi fitur graf", "Stabilitas populasi", "Gerbang kualitas data"]
+tab_metrik, tab_ablasi, tab_psi, tab_agen, tab_kualitas = st.tabs(
+    ["Metrik per model", "Uji ablasi fitur graf", "Stabilitas populasi",
+     "Evaluasi agen dan RAG", "Gerbang kualitas data"]
 )
 
 with tab_metrik:
@@ -50,20 +55,28 @@ with tab_metrik:
     dist = dummy_data.distribusi_skor()
     fig = px.histogram(dist, x="pd", color="periode", barmode="overlay", nbins=45,
                        histnorm="probability density",
+                       color_discrete_map={"Data pelatihan": "#2f6f9f", "Bulan berjalan": "#c9721c"},
                        labels={"pd": "Probability of default", "periode": "Periode"})
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10))
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
+                      title="Sebaran skor: data pelatihan vs bulan berjalan")
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Perbandingan sebaran skor data pelatihan terhadap bulan berjalan.")
+    st.caption(
+        "Pembagian data pelatihan dan validasi dilakukan berbasis waktu, dengan validasi pada "
+        "periode terbaru."
+    )
 
 with tab_ablasi:
     st.caption(
         "Kontribusi lapisan graf diukur dengan melatih model PD tanpa blok fitur graf, "
-        "lalu dengan blok tersebut. Selisihnya dilaporkan apa adanya."
+        "lalu dengan blok tersebut. Selisihnya dilaporkan apa adanya, termasuk bila tipis."
     )
     panjang = ablasi.melt(id_vars="varian", var_name="metrik", value_name="nilai")
     fig = px.bar(panjang, x="metrik", y="nilai", color="varian", barmode="group",
+                 color_discrete_map={"Tanpa blok fitur graf": "#9aa4ad",
+                                     "Dengan blok fitur graf": "#2f6f9f"},
                  labels={"metrik": "Metrik", "nilai": "Nilai", "varian": "Varian model"})
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10), yaxis_range=[0.3, 0.9])
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10), yaxis_range=[0.3, 0.9],
+                      title="Metrik model PD dengan dan tanpa blok fitur graf")
     st.plotly_chart(fig, use_container_width=True)
 
     selisih = pd.DataFrame({
@@ -82,7 +95,8 @@ with tab_psi:
     fig.update_traces(marker_color=warna)
     fig.add_vline(x=0.10, line_dash="dot", line_color="#c9721c")
     fig.add_vline(x=0.25, line_dash="dot", line_color="#c0392b")
-    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10))
+    fig.update_layout(height=460, margin=dict(l=10, r=10, t=40, b=10),
+                      title="Pergeseran distribusi fitur terhadap data pelatihan")
     st.plotly_chart(fig, use_container_width=True)
 
     perhatian = psi[psi["psi"] >= 0.10]
@@ -93,6 +107,34 @@ with tab_psi:
         )
     else:
         st.success("Seluruh fitur berada pada rentang stabil.", icon="✅")
+
+with tab_agen:
+    st.caption(
+        "Lapisan agen dan RAG kepatuhan diuji terpisah dari model kredit: ketepatan ekstraksi, "
+        "akurasi pemilihan tool, dan kemampuan menolak menjawab saat dasar kebijakan tidak ada."
+    )
+    tampil = agen.copy()
+    tampil["lulus"] = tampil["nilai"] >= tampil["ambang"]
+    fig = px.bar(tampil, x="nilai", y="metrik", orientation="h",
+                 color="lulus", color_discrete_map={True: "#2e8b6f", False: "#c0392b"},
+                 labels={"nilai": "Nilai", "metrik": "", "lulus": "Memenuhi ambang"})
+    fig.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10), xaxis_range=[0, 1.05],
+                      title="Metrik lapisan agen terhadap ambang penerimaan", showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    tabel = agen.copy()
+    tabel["nilai"] = tabel["nilai"].map(lambda v: f"{v:.2f}".replace(".", ","))
+    tabel["ambang"] = tabel["ambang"].map(lambda v: f"{v:.2f}".replace(".", ","))
+    st.dataframe(
+        tabel.rename(columns={"metrik": "Metrik", "nilai": "Nilai", "ambang": "Ambang terima"}),
+        use_container_width=True, hide_index=True,
+    )
+    st.info(
+        "Kalimat kepatuhan tanpa rujukan pasal ditolak oleh pemeriksaan otomatis sebelum "
+        "ditampilkan. Bila penelusuran tidak menemukan klausul yang relevan, jawabannya adalah "
+        "\"tidak ditemukan dasar kebijakan\".",
+        icon="🛡️",
+    )
 
 with tab_kualitas:
     ikon = {"Lulus": "✅", "Lulus dengan perbaikan": "🛠️", "Perlu telaah": "⚠️"}
@@ -106,6 +148,7 @@ with tab_kualitas:
     total = int(gerbang["baris_karantina"].sum())
     st.metric("Total baris pada tabel karantina", f"{total:,}".replace(",", "."))
     st.caption(
-        "Tingkat kekotoran data diinjeksi sendiri dan didokumentasikan pada sebuah spesifikasi, "
-        "sehingga kualitas sebelum dan sesudah pipeline dapat diukur secara objektif."
+        "Tingkat kekotoran data dan pola afiliasi tersembunyi diinjeksi sendiri serta "
+        "didokumentasikan pada sebuah spesifikasi, sehingga kualitas sebelum dan sesudah pipeline "
+        "maupun recall deteksi dapat diukur secara objektif."
     )

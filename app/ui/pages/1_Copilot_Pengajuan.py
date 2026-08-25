@@ -1,7 +1,8 @@
-"""Halaman 1 — Copilot pengajuan.
+"""Halaman 1 — Copilot pengajuan komersial.
 
 Relationship manager mengetik ringkasan pengajuan dalam bahasa bebas; jejak
-langkah agen muncul bertahap, lalu keluar skor, reason code, dan draft memo.
+langkah agen muncul bertahap, lalu keluar skor, gerbang kepatuhan, reason code,
+dan draft credit memo.
 
 Hasil pemanggilan disimpan di `st.session_state` supaya jejak agen tidak
 terhapus saat halaman dijalankan ulang oleh interaksi berikutnya.
@@ -18,14 +19,27 @@ import pandas as pd
 import streamlit as st
 
 from lib import dummy_data, memo as memo_lib, mock_engine
-from lib.format import persen, rupiah
-from lib.tampilan import badge_keputusan, kartu_hasil, plot_kontribusi, setup_halaman, sidebar_status
+from lib.format import miliar
+from lib.tampilan import (
+    badge_grade,
+    badge_keputusan,
+    kartu_hasil,
+    kartu_rasio,
+    panel_gerbang,
+    plot_bmpk,
+    plot_kontribusi,
+    setup_halaman,
+    sidebar_status,
+)
 
 setup_halaman("Copilot pengajuan", "🤖")
 sidebar_status()
 
 st.title("1 · Copilot pengajuan")
-st.caption("Masukan bahasa bebas → agen merencanakan pemanggilan tool → rekomendasi keputusan.")
+st.caption(
+    "Masukan bahasa bebas → agen merencanakan pemanggilan tool → gerbang kepatuhan → "
+    "rekomendasi keputusan."
+)
 
 with st.sidebar:
     st.divider()
@@ -41,19 +55,21 @@ JEDA = {"lambat": 0.75, "sedang": 0.35, "cepat": 0.05}[kecepatan]
 pilihan = st.selectbox(
     "Contoh kasus yang sudah disiapkan",
     options=list(range(len(dummy_data.CONTOH_PROMPT))),
-    format_func=lambda i: f"Kasus {i + 1} — {dummy_data.CONTOH_PROMPT[i][:70]}…",
+    format_func=lambda i: f"Kasus {i + 1} — {dummy_data.CONTOH_PROMPT[i][:80]}…",
 )
 teks = st.text_area(
-    "Ringkasan pengajuan dan hasil kunjungan",
+    "Ringkasan pengajuan dan hasil kunjungan relationship manager",
     value=dummy_data.CONTOH_PROMPT[pilihan],
-    height=130,
-    placeholder="Contoh: Warung kelontong di Bekasi, usaha jalan empat tahun, omzet Rp 45 juta per bulan…",
+    height=150,
+    placeholder="Contoh: PT Sumber Logam Perkasa, manufaktur komponen otomotif di Karawang, "
+                "penjualan Rp 240 miliar, EBITDA margin 11 persen, DER 1,8x…",
 )
 
 kol_tombol, kol_info = st.columns([1, 3])
 jalankan = kol_tombol.button("Jalankan copilot", type="primary", use_container_width=True)
 kol_info.caption(
-    "Penguji dipersilakan mengetik kasus baru. Ekstraksi entitas dan urutan tool akan menyesuaikan isi masukan."
+    "Penguji dipersilakan mengetik kasus baru. Ekstraksi entitas dan urutan tool akan menyesuaikan "
+    "isi masukan — termasuk memanggil tool graf tambahan bila terdeteksi indikasi afiliasi."
 )
 
 if jalankan:
@@ -66,7 +82,7 @@ if jalankan:
     st.session_state["copilot_app_id"] = application_id
 
     with st.status("Agen sedang merencanakan pemanggilan tool...", expanded=True) as status:
-        st.write("**Langkah 0 · Ekstraksi entitas dan validasi skema**")
+        st.write("**Langkah 0 · Ekstraksi entitas dan validasi skema (Pydantic)**")
         st.json(entitas, expanded=False)
         time.sleep(JEDA)
 
@@ -83,20 +99,27 @@ if jalankan:
             expanded=False,
         )
 
+    # Fitur yang tidak muncul pada narasi diisi dari riwayat nasabah dan lapisan
+    # graf; pada sistem sebenarnya nilainya datang dari warehouse dan Redis.
     fitur = dict(entitas)
     fitur.update(
-        margin_usaha=0.14,
-        stabilitas_arus_kas=0.30 if entitas["indikasi_konsentrasi_pembeli"] else 0.20,
-        supplier_concentration_hhi=0.62 if entitas["indikasi_konsentrasi_pembeli"] else 0.34,
-        neighbor_default_rate_1hop=0.09 if entitas["indikasi_penjamin_berulang"] else 0.04,
-        tenure_nasabah_thn=max(entitas["lama_usaha_thn"] - 1.5, 0.0),
+        utang_berbunga_eksisting=entitas["plafon"] * 0.25,
+        konversi_ebitda_kas=0.62 if entitas["indikasi_konsentrasi_pembeli"] else 0.76,
+        utilisasi_plafon=0.72,
+        buyer_concentration_hhi=0.71 if entitas["indikasi_konsentrasi_pembeli"] else 0.32,
+        supplier_concentration_hhi=0.66 if entitas["indikasi_konsentrasi_pemasok"] else 0.30,
+        neighbor_default_rate_1hop=0.09 if entitas["indikasi_rangkap_jabatan"] else 0.035,
+        group_exposure_share=min(0.28 + 0.11 * entitas["jumlah_entitas_grup"], 0.95),
+        tenure_nasabah_thn=max(entitas["umur_usaha_thn"] - 6.0, 0.0),
     )
     network_risk = dummy_data.score_network_risk(application_id)
     fitur["network_risk_score"] = network_risk["skor"]
 
+    hasil = mock_engine.recommend_limit_pricing(fitur)
     st.session_state["copilot_fitur"] = fitur
     st.session_state["copilot_network"] = network_risk
-    st.session_state["copilot_hasil"] = mock_engine.recommend_limit_pricing(fitur)
+    st.session_state["copilot_hasil"] = hasil
+    st.session_state["copilot_gerbang"] = mock_engine.check_credit_policy(hasil, fitur)
     st.session_state["copilot_jejak"] = jejak
 
 # ---------------------------------------------------------------- keluaran
@@ -108,23 +131,49 @@ entitas = st.session_state["copilot_entitas"]
 fitur = st.session_state["copilot_fitur"]
 hasil: mock_engine.HasilSkor = st.session_state["copilot_hasil"]
 network_risk = st.session_state["copilot_network"]
+gerbang = st.session_state["copilot_gerbang"]
 application_id = st.session_state["copilot_app_id"]
-keputusan = mock_engine.keputusan_dari_hasil(hasil)
+keputusan = mock_engine.keputusan_dari_hasil(hasil, gerbang)
+status_patuh = mock_engine.status_kepatuhan(gerbang)
 
 st.divider()
-st.markdown(f"### Rekomendasi &nbsp; {badge_keputusan(keputusan)}", unsafe_allow_html=True)
-st.caption(f"Nomor pengajuan demo: `{application_id}` · Sistem merekomendasikan, pejabat pemutus memutuskan.")
+st.markdown(
+    f"### Rekomendasi &nbsp; {badge_keputusan(keputusan)} &nbsp; {badge_grade(hasil.grade)}",
+    unsafe_allow_html=True,
+)
+st.caption(
+    f"{entitas.get('nama_debitur', '-')} · nomor pengajuan demo `{application_id}` · "
+    f"kewenangan {hasil.komite_pemutus} — sistem merekomendasikan, komite memutuskan."
+)
+
+if status_patuh == mock_engine.PENYESUAIAN:
+    st.error(
+        "Rekomendasi tidak lolos gerbang kepatuhan, sehingga tidak ditampilkan sebagai usulan "
+        "setuju. Lihat tab **Gerbang kepatuhan** untuk pasal dan penyesuaian angka yang "
+        "membuatnya patuh.",
+        icon="⛔",
+    )
+elif status_patuh == mock_engine.TELAAH:
+    st.warning(
+        "Gerbang kepatuhan memicu penelaahan lanjutan atas struktur afiliasi sebelum akad.",
+        icon="🔎",
+    )
 
 kartu_hasil(hasil, entitas["plafon"])
+st.markdown("**Rasio keuangan terhadap ambang covenant kelas rating**")
+kartu_rasio(hasil)
 
-k1, k2, k3 = st.columns(3)
-k1.metric("Loss given default", persen(hasil.lgd))
-k2.metric("Debt service coverage", f"{hasil.dscr:.2f}x", help="Ambang kebijakan minimum 1,35x")
-k3.metric("Angsuran per bulan", rupiah(hasil.angsuran, singkat=True))
-
-tab_alasan, tab_jaringan, tab_kebijakan, tab_memo = st.tabs(
-    ["Reason code", "Risiko jaringan", "Kebijakan yang dirujuk", "Draft credit memo"]
+tab_gerbang, tab_alasan, tab_jaringan, tab_grup, tab_kebijakan, tab_memo = st.tabs(
+    ["Gerbang kepatuhan", "Reason code", "Risiko jaringan", "Eksposur grup",
+     "Kebijakan yang dirujuk", "Draft credit memo"]
 )
+
+with tab_gerbang:
+    st.caption(
+        "Setiap rekomendasi melewati gerbang ini sebelum ditampilkan — kepatuhan diperiksa "
+        "sebelum keluar, bukan sesudah komite menemukan masalahnya."
+    )
+    panel_gerbang(gerbang)
 
 with tab_alasan:
     st.markdown("**Faktor pendorong utama keputusan** — merah menaikkan risiko, hijau menurunkan.")
@@ -142,7 +191,8 @@ with tab_jaringan:
     st.metric("Skor risiko jaringan", f"{skor:.0f} / 100")
     st.progress(min(skor / 100, 1.0))
     st.caption(
-        "Skor ini dilaporkan terpisah dan tidak dilebur ke dalam PD, agar alasannya tetap dapat dibaca."
+        "Skor ini dilaporkan terpisah dan tidak dilebur ke dalam PD, agar alasannya tetap "
+        "dapat dibaca komite kredit."
     )
     if network_risk["pola"]:
         for p in network_risk["pola"]:
@@ -151,16 +201,35 @@ with tab_jaringan:
                 f'<span style="opacity:.7">Bukti: {p["bukti"]} · kode <code>{p["kode"]}</code></span></div>',
                 unsafe_allow_html=True,
             )
-        st.page_link("pages/3_Jaringan_Entitas.py", label="Lihat subgraf sebagai bukti", icon="🕸️")
+        st.page_link("pages/3_Struktur_Grup_dan_Jaringan.py",
+                     label="Lihat subgraf struktur grup sebagai bukti", icon="🕸️")
     else:
-        st.success("Tidak ada pola anomali jaringan yang terpicu.", icon="✅")
+        st.success("Tidak ada pola anomali struktur yang terpicu.", icon="✅")
+
+with tab_grup:
+    g1, g2, g3 = st.columns(3)
+    g1.metric("Entitas satu grup", entitas.get("jumlah_entitas_grup", 1))
+    g2.metric("Eksposur grup berjalan", miliar(hasil.eksposur_grup, 0))
+    g3.metric("Sisa ruang BMPK", miliar(hasil.ruang_bmpk, 0),
+              delta=f"batas {miliar(mock_engine.BATAS_BMPK_GRUP, 0)}", delta_color="off")
+    st.plotly_chart(
+        plot_bmpk(hasil.eksposur_grup, hasil.limit_usulan), use_container_width=True
+    )
+    st.caption(
+        "Seluruh entitas yang dikendalikan pemilik manfaat yang sama digabungkan sebagai satu "
+        "grup debitur sebelum sisa ruang batas dihitung."
+    )
 
 with tab_kebijakan:
-    st.caption("Hasil RAG atas dokumen kebijakan kredit internal.")
+    st.caption(
+        "Hasil RAG atas korpus kebijakan kredit komersial. Versi kebijakan diikat pada tanggal "
+        "pengajuan, bukan yang berlaku hari ini."
+    )
     for p in dummy_data.kutipan_kebijakan(entitas):
         st.markdown(
             f'<div class="kotak"><b>{p["pasal"]}</b> '
-            f'<span style="opacity:.6">· kemiripan {p["skor"]:.2f}</span><br>{p["isi"]}</div>',
+            f'<span style="opacity:.6">· kemiripan {p["skor"]:.2f} · {p.get("versi", "")}</span><br>'
+            f'{p["isi"]}</div>',
             unsafe_allow_html=True,
         )
     st.markdown("**Dokumen yang masih kurang**")
@@ -171,6 +240,7 @@ with tab_memo:
     teks_memo = memo_lib.susun_memo(
         application_id, entitas, hasil, network_risk,
         dummy_data.kutipan_kebijakan(entitas), dummy_data.dokumen_kurang(entitas),
+        gerbang=gerbang,
     )
     st.download_button(
         "Unduh draft credit memo (.md)",
