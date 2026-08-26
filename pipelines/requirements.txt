@@ -1,0 +1,13 @@
+# Dependensi data pipeline (Prefect). UI Streamlit punya requirements sendiri
+# di app/ui/requirements.txt.
+prefect>=3.1,<4
+pandas>=2.2
+numpy>=1.26
+pyarrow>=15
+scipy>=1.11
+networkx>=3.2
+Faker>=25
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+python-dotenv>=1.0
+pytest>=8.0
