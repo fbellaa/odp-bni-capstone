@@ -2,6 +2,21 @@
 
 Dokumen ini yang dibaca duluan sebelum menyentuh datanya.
 
+> **PERBAIKAN NILAI — build 27 Agustus 2026.**
+> Tiga cacat nilai ditemukan lewat profiling dan sudah diperbaiki. Ketiganya
+> mengubah angka, jadi hasil model dari build sebelumnya tidak sebanding.
+>
+> | Cacat | Sebelum | Sesudah |
+> |---|---|---|
+> | `app_umur_perusahaan_tahun` negatif | 22 baris (−1 s/d −2 tahun) | 0 baris |
+> | Rasio `fin_*` tanpa winsorisasi | `growth_penjualan` maks 12.739, `icr` 43.456 | maks/p99 ≤ 1,8x |
+> | Embedding graf berskala rupiah | \|emb\| maks 3,3e13 | 687 |
+>
+> Winsorisasi p1/p99 kini berjalan dua lapis: rasio sumber di
+> `transform/silver.py`, lalu kolom tren yang dihitung ulang di
+> `generators/sintesis.py`. Pos rupiah absolut (`fin_total_aset_rp` dkk)
+> **sengaja tidak** diwinsorisasi - lihat "Yang masih perlu dijaga" di bawah.
+>
 > **PERUBAHAN BLOK `graf_` — build 27 Agustus 2026.**
 > Alamat kini menjadi entitas tersendiri (`DIM_ALAMAT`) dan ikut sebagai simpul
 > di `GOLD_GRAPH_NODES` (+1.561 simpul, +5.318 edge `beralamat_di`). Grafnya
@@ -22,6 +37,46 @@ Dokumen ini yang dibaca duluan sebelum menyentuh datanya.
 > lewat filter titik-waktu yang sama di `fitur_pit.py`. Tapi **hasil model yang
 > dilatih pada blok `graf_` versi lama tidak sebanding dengan yang baru dan
 > perlu dihitung ulang.**
+
+---
+
+## 0b. Yang masih perlu dijaga (sudah diprofil, sengaja tidak diperbaiki)
+
+Empat hal di bawah bukan bug yang tertinggal - semuanya sudah diukur dan
+keputusannya sadar. Yang dibutuhkan bukan perbaikan data, tapi kehati-hatian
+saat memodelkan.
+
+**1. Pos rupiah absolut tidak diwinsorisasi.** `fin_total_aset_rp` mencapai
+Rp 645 triliun padahal penjualan dibatasi Rp 300 miliar; 47 baris punya aset
+lebih dari 100x penjualan (median 409x, maksimum 20.820x). Sebabnya
+`skala_rupiah` dikalibrasi pada penjualan, sedangkan rasio aset/penjualan
+diambil apa adanya dari panel US. Winsorisasi tidak dipakai di sini karena ini
+pos akuntansi, bukan hasil pembagian. **Pakai rasionya (`fin_asset_turnover`,
+`fin_der`), jangan pos absolutnya**, atau log-transformasi dulu.
+
+**2. Kolom agunan di `abt_lgd` adalah derau, bukan fitur.** Agunan disintesis
+tanpa melihat `lgd_realisasi`; korelasinya 0,05. Akibatnya 100% fasilitas
+agunannya menutup EAD (median 1,74x) tapi mean LGD tetap 0,64. **Jangan pakai
+`app_coverage_ratio`, `app_nilai_likuidasi_rp`, `app_jumlah_agunan`,
+`app_lgd_ditutup_agunan` sebagai fitur LGD** - lihat `FITUR_LGD_TERAPAN` untuk
+daftar yang sah. Dengan 214 baris, kolom derau bisa muncul sebagai "penting"
+secara kebetulan, bahkan dengan tanda terbalik.
+
+**3. `abt_pengajuan_ditolak`: kolom agunan dan plafon 100% kosong.** Pengajuan
+yang ditolak tidak pernah menjadi fasilitas, jadi tidak punya agunan. Wajar,
+tapi artinya **reject inference hanya boleh memakai fitur PRA-keputusan**
+(`fin_*`, `app_plafon_diminta_rp`, `app_tenor_bulan`, `app_sektor_kbli`, ...).
+Gerbang `abt_ditolak_seruang_fitur` hanya membandingkan nama kolom, bukan
+tingkat isinya.
+
+**4. `perilaku_kolektibilitas` sepenuhnya ditentukan `perilaku_dpd`.** Pemetaan
+regulatifnya deterministik (kol 1 = 0 hari, kol 2 = 1-90, kol 3 = 91-120,
+kol 4 = 121-180). Dua kolom itu redundan - pilih salah satu. Kol 5 (macet)
+tidak pernah muncul karena DPD maksimum 178.
+
+Ditambah batasan yang sudah disebut di tempat lain: `abt_pd` hanya punya
+**136 kejadian gagal bayar** untuk 93 kolom. Itu ~1,5 kejadian per kolom, jadi
+regularisasi dan seleksi fitur wajib, dan selang kepercayaan AUC akan lebar.
 
 ---
 
@@ -424,7 +479,7 @@ proses terpisah menghasilkan 29 dari 29 tabel identik byte per byte.
 2. **Waktu default hasil penskalaan.** `hari_ke_default` asli SBA bermedian
    1.314 hari; diskala monoton ke jendela 60–730 hari. Urutan cepat/lambat
    dipertahankan, besaran absolutnya tidak berarti.
-3. **ICR memakai asumsi tarif pajak 25%** karena beban bunga tidak ada di data
+3. **ICR memakai asumsi tarif pajak 22%** karena beban bunga tidak ada di data
    sumber. Lihat [data-lineage.md §3.1](data-lineage.md).
 4. **Siklus modal kerja = DSO + DIO tanpa DPO** (utang usaha tidak tersedia),
    jadi angkanya lebih tinggi dari siklus kas sebenarnya.

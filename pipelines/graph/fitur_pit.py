@@ -44,6 +44,32 @@ def _hhi(bobot: np.ndarray) -> float:
     return float((porsi**2).sum())
 
 
+def _bobot_sebanding(g: nx.Graph) -> None:
+    """Isi atribut `w` = log1p(bobot) pada tiap edge, dipakai semua metrik berbobot.
+
+    `bobot` di GOLD_GRAPH_EDGES berbeda satuan per rel_type:
+
+        memiliki         porsi kepemilikan   0,05 - 0,95
+        menjabat_di      penanda             1,0
+        berbagi_atribut  penanda             1,0
+        beralamat_di     penanda             1,0
+        memasok          RUPIAH transfer     2e9 - 1e13
+
+    Menjumlahkan keduanya berarti edge rupiah menang sepuluh orde magnitudo, dan
+    seluruh metrik berbobot berubah menjadi "volume transfer" - kepemilikan,
+    rangkap jabatan, dan alamat bersama praktis tidak terlihat. Pada embedding
+    akibatnya paling parah: SVD atas adjacency berbobot rupiah menghasilkan nilai
+    singular berskala miliaran, dan kolom emb_* terukur merentang 18 orde
+    magnitudo (median 1,1e-05, maksimum 3,3e13).
+
+    log1p menahan ekornya tanpa membalik urutan: rupiah jatuh ke 21-30, penanda
+    ke 0,69, kepemilikan ke 0,05-0,67. Transfer besar tetap berbobot lebih tinggi
+    daripada satu jabatan, tapi tidak lagi menenggelamkannya.
+    """
+    for _, _, data in g.edges(data=True):
+        data["w"] = float(np.log1p(max(data.get("bobot", 0.0), 0.0)))
+
+
 def _embedding_svd(g: nx.Graph, urutan: list[int]) -> np.ndarray | None:
     """Pengganti node2vec yang murah dan deterministik: SVD tersaring dari adjacency.
 
@@ -56,7 +82,7 @@ def _embedding_svd(g: nx.Graph, urutan: list[int]) -> np.ndarray | None:
         return None
     if g.number_of_edges() == 0 or len(urutan) <= DIMENSI_EMBEDDING + 1:
         return None
-    a = nx.to_scipy_sparse_array(g, nodelist=urutan, weight="bobot", format="csr").astype(float)
+    a = nx.to_scipy_sparse_array(g, nodelist=urutan, weight="w", format="csr").astype(float)
     k = min(DIMENSI_EMBEDDING, min(a.shape) - 1)
     u, s, _ = svds(a, k=k, random_state=settings.seed)
 
@@ -92,16 +118,18 @@ def hitung_snapshot(
         else:
             g.add_edge(src, dst, bobot=float(bobot))
 
+    _bobot_sebanding(g)
+
     derajat = dict(g.degree())
-    derajat_berbobot = dict(g.degree(weight="bobot"))
-    pagerank = nx.pagerank(g, weight="bobot") if g.number_of_edges() else {}
+    derajat_berbobot = dict(g.degree(weight="w"))
+    pagerank = nx.pagerank(g, weight="w") if g.number_of_edges() else {}
     betweenness = (
         nx.betweenness_centrality(g, k=min(K_BETWEENNESS, g.number_of_nodes()), seed=settings.seed)
         if g.number_of_edges()
         else {}
     )
     komunitas = (
-        nx.community.louvain_communities(g, weight="bobot", seed=settings.seed)
+        nx.community.louvain_communities(g, weight="w", seed=settings.seed)
         if g.number_of_edges()
         else []
     )

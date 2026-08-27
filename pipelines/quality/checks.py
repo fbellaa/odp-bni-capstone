@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import networkx as nx
+import numpy as np
 import pandas as pd
 
 from pipelines.config import QUALITY_DIR, settings
@@ -490,6 +491,49 @@ def uji_abt(h: Hasil) -> None:
             0.15 <= kadar <= 0.50,
             f"P(gagal bayar | anggota klaster buku baru) = {kadar:.1%}",
             kritis=False,
+        )
+
+    # ---- nilai yang tidak mungkin secara akuntansi / definisi
+    # Ketiganya pernah lolos ke ABT dan baru ketahuan saat profiling manual.
+    h.catat(
+        "abt_umur_perusahaan_tidak_negatif",
+        bool((abt_pd["app_umur_perusahaan_tahun"] >= 0).all()),
+        f"{int((abt_pd['app_umur_perusahaan_tahun'] < 0).sum())} baris berumur negatif",
+    )
+
+    # Winsorisasi p1/p99 di silver membatasi ekor rasio. Ambang 200x longgar -
+    # yang dijaga bukan bentuk distribusinya, tapi supaya satu baris tunggal
+    # tidak lagi menggeser skala seluruh kolom.
+    ekor = {}
+    for kolom in (
+        "fin_growth_penjualan",
+        "fin_icr",
+        "fin_current_ratio",
+        "fin_der",
+        "fin_icr_yoy",
+        "fin_der_yoy",
+    ):
+        if kolom not in abt_pd.columns:
+            continue
+        x = abt_pd[kolom].dropna()
+        p99 = abs(x.quantile(0.99))
+        if p99 > 0 and abs(x.max()) / p99 > 200:
+            ekor[kolom] = round(float(abs(x.max()) / p99), 1)
+    h.catat(
+        "abt_rasio_keuangan_terwinsorisasi",
+        not ekor,
+        f"rasio max/p99 di atas 200x: {ekor or 'tidak ada'}",
+    )
+
+    # Embedding graf hasil SVD atas adjacency berbobot log. Kalau bobot rupiah
+    # mentah bocor kembali ke sana, nilainya langsung meledak ke 1e13.
+    emb = [c for c in abt_pd.columns if "node_emb" in c]
+    if emb:
+        maks = float(np.nanmax(np.abs(abt_pd[emb].to_numpy())))
+        h.catat(
+            "abt_embedding_graf_berskala_wajar",
+            maks < 1e6,
+            f"|emb| maksimum = {maks:.3g}",
         )
 
     # ---- DIM_ALAMAT: alamat sebagai entitas yang bisa dicocokkan

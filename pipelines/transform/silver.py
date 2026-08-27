@@ -13,9 +13,32 @@ import numpy as np
 import pandas as pd
 
 from pipelines.config import NAICS_TO_KBLI, RATING_ORDER, settings
-from pipelines.utils import kuantil_bucket, rasio_aman, read_table, write_table
+from pipelines.utils import kuantil_bucket, rasio_aman, read_table, winsorize, write_table
 
 LOG = logging.getLogger("pipelines.silver")
+
+# Rasio turunan yang dipotong p1/p99 sebelum masuk gold. Hanya RASIO - pos
+# absolut (total_assets, ebitda, ...) dibiarkan apa adanya karena itu angka
+# akuntansi yang nanti diskalakan ke rupiah, bukan hasil pembagian yang bisa
+# meledak oleh penyebut kecil.
+RASIO_DIWINSORISASI = [
+    "der",
+    "debt_to_ebitda",
+    "icr",
+    "roa",
+    "operating_margin",
+    "gross_margin",
+    "current_ratio",
+    "quick_ratio",
+    "asset_turnover",
+    "wc_to_ta",
+    "re_to_ta",
+    "cfo_to_ebitda",
+    "cfo_to_liability",
+    "dso_hari",
+    "dio_hari",
+    "growth_penjualan",
+]
 
 # Asumsi yang dipakai untuk menurunkan beban bunga dari pos akuntansi mentah.
 # X1..X18 tidak memuat beban bunga, jadi diturunkan dari identitas
@@ -44,6 +67,22 @@ KURS_KE_USD = {
 }
 
 KURS_USD_IDR = 17_700.0
+
+# Pelokalan kanal pembayaran ke padanan sistem pembayaran Indonesia. Seluruh
+# konteks Indonesia di pipeline ini sintesis - lihat docs/data-lineage.md.
+# Catatan penting: "Bitcoin" -> "Transfer Valas" MENGUBAH MAKNA kanalnya, bukan
+# sekadar terjemahan. Kripto tidak sah sebagai alat pembayaran di Indonesia
+# (UU 7/2011), sedangkan fact table membingkai transfer ini sebagai giro rupiah
+# antar entitas Indonesia. Padanan yang dipilih mempertahankan peran aslinya
+# sebagai kanal lintas yurisdiksi berisiko tinggi, dalam bentuk yang sah.
+FORMAT_PEMBAYARAN_ID = {
+    "Cheque": "Cek",
+    "Wire": "RTGS",
+    "ACH": "Kliring",
+    "Cash": "Tunai",
+    "Credit Card": "Kartu Kredit",
+    "Bitcoin": "Transfer Valas",
+}
 
 
 # --------------------------------------------------------------- panel US
@@ -87,12 +126,30 @@ def build_silver_us_panel() -> int:
     # tidak tersedia pada X1..X18 - keterbatasan ini dicatat di dokumentasi.
     df["dso_hari"] = rasio_aman(df["total_receivables"], df["total_revenue"]) * 365
     df["dio_hari"] = rasio_aman(df["inventory"], df["cogs"]) * 365
-    df["siklus_modal_kerja_hari"] = (df["dso_hari"] + df["dio_hari"]).clip(0, 720)
 
     df = df.sort_values(["company_name", "year"])
     grup = df.groupby("company_name", sort=False)
     df["growth_penjualan"] = grup["total_revenue"].pct_change().replace([np.inf, -np.inf], np.nan)
     df["label_default"] = (df["status_label"] == "failed").astype("int8")
+
+    # Winsorisasi p1/p99 atas seluruh rasio turunan.
+    #
+    # rasio_aman() sudah menahan pembagian nol, tapi tidak menahan penyebut yang
+    # kecil-tapi-sah. Sisanya lolos apa adanya ke ABT, dan hasilnya ekor yang
+    # tidak berarti apa-apa: growth_penjualan mencapai 12.739 (1,27 juta persen),
+    # ICR 43.456, current_ratio 4.759. Rasio max/p99 sampai 4.649x, jadi satu
+    # baris tunggal bisa menggeser skala seluruh kolom.
+    #
+    # Dipotong DI SINI, di panel sumber, bukan di ABT - kuantilnya dihitung atas
+    # seluruh panel firm-year dan tidak menyentuh populasi pemodelan, sehingga
+    # tidak ada informasi test yang merembes ke train lewat ambang potongnya.
+    # Pemotongan juga bebas label: murni kuantil kolomnya sendiri.
+    for kolom in RASIO_DIWINSORISASI:
+        df[kolom] = winsorize(df[kolom])
+
+    # Dihitung setelah dso/dio dipotong, kalau tidak siklusnya menumpuk di
+    # batas 720 hari hanya karena ekor yang belum dibersihkan.
+    df["siklus_modal_kerja_hari"] = (df["dso_hari"] + df["dio_hari"]).clip(0, 720)
 
     kolom = [
         "us_row_id",
@@ -273,12 +330,16 @@ def build_silver_sba() -> int:
 
 # ---------------------------------------------------------------------- AML
 def build_silver_aml() -> int:
-    """Normalisasi nilai transfer dan petakan waktunya ke jendela model.
+    """Normalisasi nilai transfer, waktu, dan kanal pembayarannya.
 
     Timestamp asli LI-Small_Trans hanya mencakup 1-17 September 2022. Urutan dan
     jarak relatif antar transfer dipertahankan, lalu diregangkan linier ke
     settings.aml_window supaya snapshot bulanan graf punya isi. Transformasi ini
     SINTESIS dan wajib disebut di dokumentasi model.
+
+    `format_pembayaran` juga dipetakan ke padanan Indonesia lewat
+    FORMAT_PEMBAYARAN_ID. Label asli disimpan di `src_format_pembayaran` supaya
+    pemetaannya tetap bisa ditelusuri.
     """
     df = read_table("bronze", "br_aml_transfer")
     if df.empty:
@@ -299,6 +360,17 @@ def build_silver_aml() -> int:
     df["selisih_rekonsiliasi"] = (
         df["nominal_dibayar"] - df["nominal_diterima"]
     ).abs() / df["nominal_dibayar"].replace(0, np.nan)
+
+    df["src_format_pembayaran"] = df["format_pembayaran"]
+    df["format_pembayaran"] = (
+        df["src_format_pembayaran"].map(FORMAT_PEMBAYARAN_ID).fillna(df["src_format_pembayaran"])
+    )
+    tak_terpetakan = sorted(
+        set(df.loc[df["format_pembayaran"] == df["src_format_pembayaran"], "src_format_pembayaran"])
+        - set(FORMAT_PEMBAYARAN_ID.values())
+    )
+    if tak_terpetakan:
+        LOG.warning("format pembayaran tanpa padanan Indonesia: %s", tak_terpetakan)
 
     write_table(df, "silver", "sl_aml_transfer")
     return len(df)

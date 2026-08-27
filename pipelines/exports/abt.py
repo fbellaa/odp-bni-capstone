@@ -414,9 +414,23 @@ FITUR_LGD_BERSINYAL = {*FITUR_LGD_TERAPAN, "app_produk_id"}
 def build_abt_lgd() -> pd.DataFrame:
     """Fasilitas yang default, dengan LGD realisasi dari SBA sebagai target.
 
-    PERINGATAN: 75 baris, dan hanya kolom pada FITUR_LGD_BERSINYAL yang punya
-    hubungan nyata dengan target - karena berasal dari baris SBA yang sama.
-    Sisanya disintesis terpisah dari target, jadi derau.
+    PERINGATAN: ratusan baris saja, dan hanya kolom pada FITUR_LGD_BERSINYAL
+    yang punya hubungan nyata dengan target - karena berasal dari baris SBA yang
+    sama. Sisanya disintesis terpisah dari target, jadi derau.
+
+    Termasuk derau: seluruh kolom agunan (app_nilai_likuidasi_rp,
+    app_coverage_ratio, app_jumlah_agunan, app_lgd_ditutup_agunan). Agunan
+    disintesis tanpa melihat lgd_realisasi, jadi korelasinya dengan target nol
+    secara konstruksi - terukur 0,05 terhadap coverage_ratio. Akibat yang
+    terlihat di angka: 100% fasilitas agunannya menutup EAD (median 1,74x)
+    namun mean LGD tetap 0,64, dan 48 baris rugi >90%.
+
+    Itu BUKAN untuk diperbaiki dengan menyambungkan keduanya. Menurunkan LGD
+    dari agunan membuat target menjadi fungsi deterministik fitur (model cuma
+    menemukan kembali rumusnya), sedangkan menyintesis agunan dari LGD adalah
+    arah kausal terbalik - kesalahan yang sama persis dengan yang diperingatkan
+    generators/afiliasi.py. Yang benar: jangan pakai kolom agunan sebagai fitur
+    LGD, dan pakai tabel ini untuk expected loss tingkat portofolio.
 
     Tabel ini untuk MENERAPKAN model LGD dan menghitung expected loss, bukan
     untuk melatihnya. Data latihnya ada di `abt_lgd_sumber`.

@@ -18,7 +18,7 @@ import pandas as pd
 from faker import Faker
 
 from pipelines.config import RATING_ORDER, settings
-from pipelines.utils import read_table
+from pipelines.utils import read_table, winsorize
 
 LOG = logging.getLogger("pipelines.generators")
 
@@ -141,15 +141,27 @@ def buat_dim_debitur(rng: np.random.Generator) -> pd.DataFrame:
 
     # tahun_berdiri: pakai tanggal pendirian ICIJ bila masuk akal, kalau tidak
     # diturunkan dari flag NewExist SBA.
+    #
+    # BATAS ATASNYA WAJIB IKUT ANGKATAN. Tanpa itu perusahaan bisa "berdiri"
+    # 2023 padahal mengajukan Februari 2022, dan app_umur_perusahaan_tahun di
+    # abt.py (tahun_buku_terakhir - tahun_berdiri) keluar negatif. Terukur pada
+    # build sebelumnya: 22 baris abt_pd berumur -1 sampai -2 tahun.
+    #
+    # Batasnya tahun buku terakhir, bukan tahun pengajuan: debitur harus sudah
+    # ada saat laporan keuangan yang dipakai menilainya disusun.
+    tahun_maks = df["angkatan"].map(
+        {k: v["tahun_buku_terakhir"] for k, v in settings.angkatan.items()}
+    )
     tahun_icij = pd.to_datetime(df["incorporation_date"], errors="coerce").dt.year
     tahun_acak = np.where(
         df["perusahaan_baru"].fillna(False),
-        rng.integers(2021, 2024, size=len(df)),
+        rng.integers(2018, 2025, size=len(df)),
         rng.integers(1985, 2018, size=len(df)),
     )
-    df["tahun_berdiri"] = (
+    tahun_berdiri = (
         tahun_icij.where(tahun_icij.between(1970, 2024)).fillna(pd.Series(tahun_acak, index=df.index))
-    ).astype(int)
+    )
+    df["tahun_berdiri"] = np.minimum(tahun_berdiri, tahun_maks).astype(int)
 
     df["skor_kredit"] = _skor_kredit(df)
     df["rating_internal"] = _rating_internal(df["skor_kredit"])
@@ -250,11 +262,23 @@ def buat_fact_laporan_keuangan(dim_debitur: pd.DataFrame) -> pd.DataFrame:
     # Tren 3 tahun (proposal §6: DER, ICR, debt/EBITDA dan trennya).
     df = df.sort_values(["cif_sk", "tahun_buku"])
     g = df.groupby("cif_sk", sort=False)
+    turunan = []
     for kolom in ("der", "icr", "debt_to_ebitda", "penjualan_rp"):
         df[f"{kolom}_yoy"] = (
             g[kolom].pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan)
         )
         df[f"{kolom}_delta_3thn"] = g[kolom].transform(lambda s: s - s.iloc[0])
+        turunan += [f"{kolom}_yoy", f"{kolom}_delta_3thn"]
+
+    # Winsorisasi ulang untuk kolom turunan.
+    #
+    # Winsorisasi di silver memotong rasio SUMBER-nya, tapi tren dihitung ulang
+    # di sini, dan pct_change bisa meledak lagi walau pembilang sudah dipotong:
+    # cukup tahun sebelumnya mendekati nol. penjualan_rp_yoy paling parah karena
+    # penjualan_rp adalah pos rupiah yang tidak ikut dipotong di silver sama
+    # sekali - terukur mencapai 12.739 (1,27 juta persen) sebelum ini ada.
+    for kolom in turunan:
+        df[kolom] = winsorize(df[kolom])
 
     fact = pd.DataFrame(
         {

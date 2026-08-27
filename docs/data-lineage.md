@@ -29,6 +29,7 @@ Yang sintesis: **keterkaitan antar sumber**, dan seluruh konteks Indonesia.
 | Tingkat pemulihan / LGD | `SBAnational.csv` | **NYATA** |
 | Tenor, revolving, kelengkapan dokumen | `SBAnational.csv` | **NYATA** |
 | Topologi transfer, siklus, fan-in/out | `LI-Small_Trans.csv` | **NYATA** (sintetis di sumber, bukan buatan kita) |
+| Kanal pembayaran transfer (`format_pembayaran`) | pemetaan ke sistem pembayaran Indonesia | SINTESIS - lihat 3.7 |
 | Kepemilikan berlapis, rangkap jabatan, alamat dibagi | ICIJ Offshore Leaks | **NYATA** |
 | Nama PT, CIF, NPWP, alamat Indonesia | Faker + aturan | SINTESIS |
 | Sektor KBLI | pemetaan NAICS 2 digit | SINTESIS (turunan) |
@@ -54,12 +55,13 @@ ikut dilaporkan setiap kali angkanya dikutip.
 diturunkan dari identitas laba:
 
 ```
-NI = (EBIT - bunga) x (1 - tarif pajak)   ->   bunga = EBIT - NI / (1 - 0,25)
+NI = (EBIT - bunga) x (1 - tarif pajak)   ->   bunga = EBIT - NI / (1 - 0,22)
 bunga = max(bunga, 1% x total liabilitas)   # lantai supaya ICR tidak meledak
 ICR   = EBIT / bunga
 ```
 
-Tarif pajak 25% adalah asumsi tunggal, dipakai konsisten. Semua rasio lain
+Tarif pajak 22% adalah asumsi tunggal, dipakai konsisten
+(`silver.TARIF_PAJAK`). Semua rasio lain
 (DER, debt/EBITDA, ROA, current ratio, DSO, DIO) dihitung langsung dari pos
 akuntansi tanpa asumsi tambahan.
 
@@ -90,10 +92,38 @@ penuh, dan ini harus disebut saat melaporkan metrik graf.
 ### 3.6 Kurs
 
 Nilai transfer AML dikonversi ke rupiah dengan tabel kurs statis
-(`silver.KURS_KE_USD`, USD/IDR 16.000). Angka ini hanya dipakai sebagai **bobot
-edge**, bukan sebagai nilai transaksi yang berarti.
+(`silver.KURS_KE_USD`, USD/IDR 17.700 - `silver.KURS_USD_IDR`). Angka ini
+hanya dipakai sebagai **bobot edge**, bukan sebagai nilai transaksi yang
+berarti.
 
-### 3.7 Waktu terjadinya default
+### 3.7 Kanal pembayaran (`format_pembayaran`)
+
+Nilai asli `LI-Small_Trans.csv` dipetakan ke padanan sistem pembayaran Indonesia
+di `silver.FORMAT_PEMBAYARAN_ID`. Label asli tetap disimpan di kolom
+`src_format_pembayaran`.
+
+| Asli | Jadi |
+|---|---|
+| Cheque | Cek |
+| Wire | RTGS |
+| ACH | Kliring |
+| Cash | Tunai |
+| Credit Card | Kartu Kredit |
+| Bitcoin | **Transfer Valas** |
+
+Lima baris pertama adalah pelokalan istilah. **Baris terakhir bukan** — ia
+mengubah makna kanalnya dan wajib disebut setiap kali komposisi kanal dilaporkan.
+Alasannya: `FACT_TRANSFER_GIRO` membingkai transfer sebagai giro **rupiah antar
+entitas Indonesia** (kedua kaki dipetakan ke rekening debitur/counterparty
+sintetis, mata uang asli tidak dibawa), sedangkan kripto tidak sah sebagai alat
+pembayaran di Indonesia (UU No. 7/2011 tentang Mata Uang). `Transfer Valas`
+dipilih karena sah, lazim di korporasi, dan mempertahankan peran asli `Bitcoin`
+di dataset sebagai kanal lintas yurisdiksi berisiko tinggi - yang merupakan
+sinyal AML-nya. Konsekuensinya: **jangan menarik kesimpulan tentang perilaku
+kripto** dari kolom ini, dan share `Transfer Valas` bukan estimasi porsi
+transaksi valas yang sebenarnya di populasi mana pun.
+
+### 3.8 Waktu terjadinya default
 
 `hari_ke_default` di SBA (selisih `ChgOffDate - DisbursementDate`) bermedian
 **1.314 hari** (P10 694, P90 2.344) — jauh di luar jendela observasi 24 bulan
@@ -118,7 +148,7 @@ sisanya belum sempat teramati.
 Konsekuensi pelaporan: **urutan cepat/lambat gagal bayar bermakna, besaran
 absolut harinya tidak.**
 
-### 3.8 Porsi kepemilikan
+### 3.9 Porsi kepemilikan
 
 ICIJ mencatat *siapa* pemegang saham, bukan *berapa persen*. Kolom
 `FACT_KEPEMILIKAN.porsi_kepemilikan` karena itu SINTESIS (Dirichlet), sementara
