@@ -21,29 +21,29 @@ LOG = logging.getLogger("pipelines.silver")
 # X1..X18 tidak memuat beban bunga, jadi diturunkan dari identitas
 # NI = (EBIT - bunga) * (1 - tarif pajak). Asumsi ini WAJIB ikut didokumentasikan
 # bersama angka ICR - lihat docs/data-lineage.md.
-TARIF_PAJAK = 0.25
+TARIF_PAJAK = 0.22
 BUNGA_MINIMUM_ATAS_LIABILITAS = 0.01
 
 # Kurs statis untuk menyamakan satuan bobot edge AML. Nilai transfer di dataset
-# sumber bukan rupiah; konversi ini sintesis dan hanya dipakai sebagai bobot.
 KURS_KE_USD = {
-    "US Dollar": 1.0,
-    "Euro": 1.08,
-    "Yuan": 0.14,
-    "Yen": 0.0067,
-    "Australian Dollar": 0.66,
-    "UK Pound": 1.27,
-    "Canadian Dollar": 0.74,
-    "Swiss Franc": 1.12,
-    "Rupee": 0.012,
-    "Ruble": 0.011,
-    "Brazil Real": 0.20,
-    "Mexican Peso": 0.058,
+    "US Dollar": 1.00,
+    "Euro": 1.17,
+    "Yuan": 0.15,
+    "Yen": 0.0063,
+    "Australian Dollar": 0.72,
+    "UK Pound": 1.36,
+    "Canadian Dollar": 0.72,
+    "Swiss Franc": 1.25,
+    "Rupee": 0.0105,
+    "Ruble": 0.012,
+    "Brazil Real": 0.19,
+    "Mexican Peso": 0.059,
     "Saudi Riyal": 0.27,
-    "Shekel": 0.27,
-    "Bitcoin": 60000.0,
+    "Shekel": 0.34,
+    "Bitcoin": 112000.0,
 }
-KURS_USD_IDR = 16_000.0
+
+KURS_USD_IDR = 17_700.0
 
 
 # --------------------------------------------------------------- panel US

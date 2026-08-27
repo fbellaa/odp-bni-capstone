@@ -11,7 +11,12 @@ import pandas as pd
 import pytest
 
 from pipelines.config import settings
-from pipelines.exports.abt import HORIZON_EWS_BULAN, HORIZON_PD_BULAN, KOLOM_TERLARANG
+from pipelines.exports.abt import (
+    FITUR_LGD_TERAPAN,
+    HORIZON_EWS_BULAN,
+    HORIZON_PD_BULAN,
+    KOLOM_TERLARANG,
+)
 from pipelines.utils import read_table, table_exists
 
 pytestmark = pytest.mark.skipif(
@@ -188,3 +193,137 @@ def test_kamus_menandai_fitur_derau_pada_abt_lgd():
     assert len(fitur) > 0
     assert fitur["catatan"].str.contains("DERAU").any()
     assert fitur["catatan"].str.contains("sinyal nyata").any()
+
+
+# ------------------------------------------ injeksi afiliasi tersembunyi (§7)
+@pytest.mark.skipif(
+    not table_exists("gold", "fact_afiliasi_tersembunyi"),
+    reason="injeksi afiliasi dimatikan (INJEKSI_AFILIASI=0)",
+)
+class TestAfiliasiTersembunyi:
+    """Penjaga langkah 7. Ground truth-nya hanya untuk evaluasi deteksi."""
+
+    def test_ground_truth_tidak_bocor_ke_abt(self, abt_pd):
+        jejak = [
+            c
+            for c in abt_pd.columns
+            if any(k in c for k in ("afiliasi", "klaster", "peran", "mekanisme"))
+        ]
+        assert not jejak, f"ground truth afiliasi bocor ke abt_pd: {jejak}"
+
+    def test_edge_injeksi_tidak_ditandai(self):
+        """Kalau edge injeksi punya penanda sendiri, ia tidak lagi tersembunyi."""
+        edges = read_table("gold", "gold_graph_edges")
+        assert set(edges["sumber"].unique()) <= {"icij", "aml"}
+        assert not [c for c in edges.columns if "afiliasi" in c]
+
+    def test_klaster_melintasi_grup_usaha(self):
+        """Afiliasi tersembunyi harus melintasi grup - kalau tidak, ia cuma grup."""
+        klaster = read_table("gold", "fact_afiliasi_tersembunyi")
+        debitur = read_table("gold", "dim_debitur", columns=["cif_sk", "grup_id", "is_current"])
+        grup = debitur[debitur["is_current"]].set_index("cif_sk")["grup_id"]
+        per_klaster = klaster.assign(g=klaster["cif_sk"].map(grup)).groupby("afiliasi_id")["g"]
+        assert (per_klaster.nunique() > 1).all()
+
+    def test_penularan_hanya_terlihat_ke_belakang(self):
+        """Sumber wajib jatuh sebelum anggota terinfeksi mengajukan kredit."""
+        klaster = read_table("gold", "fact_afiliasi_tersembunyi")
+        default = read_table("gold", "fact_default", columns=["cif_sk", "tanggal_default"])
+        pengajuan = read_table("gold", "fact_pengajuan", columns=["cif_sk", "tanggal_pengajuan"])
+
+        sumber = (
+            klaster[klaster["peran"] == "sumber"]
+            .merge(default, on="cif_sk")
+            .groupby("afiliasi_id")["tanggal_default"]
+            .min()
+        )
+        infeksi = (
+            klaster[klaster["peran"] == "terinfeksi"]
+            .merge(pengajuan, on="cif_sk")
+            .groupby("afiliasi_id")["tanggal_pengajuan"]
+            .min()
+        )
+        bersama = sumber.index.intersection(infeksi.index)
+        assert len(bersama) > 0
+        assert (sumber[bersama] < infeksi[bersama]).all()
+
+    def test_komposisi_klaster_sesuai_spesifikasi(self):
+        klaster = read_table("gold", "fact_afiliasi_tersembunyi")
+        per_peran = klaster.groupby(["afiliasi_id", "peran"]).size().unstack(fill_value=0)
+        assert (per_peran["sumber"] == settings.afiliasi_default_per_klaster).all()
+        assert (per_peran["terinfeksi"] == settings.afiliasi_default_per_klaster).all()
+        assert (per_peran["sehat"] == settings.afiliasi_sehat_per_klaster).all()
+
+
+def test_kamus_menandai_perlakuan_nan():
+    """NaN pada debt_to_ebitda bermakna (EBITDA <= 0) - kamus wajib memperingatkan.
+
+    Tanpa peringatan ini, fillna(median) menghapus sinyal sekaligus memberi
+    debitur ber-EBITDA negatif angka rasio yang tampak sehat.
+    """
+    kamus = read_table("gold", "kamus_data_abt")
+    pd_kamus = kamus[kamus["abt"] == "abt_pd"].set_index("kolom")["catatan"]
+
+    assert "NaN BERMAKNA" in pd_kamus.get("fin_debt_to_ebitda", "")
+    assert "tidak ada relasi" in pd_kamus.get("graf_supplier_concentration_hhi", "")
+    assert "tersensor kanan" in pd_kamus.get("y_default_12bln", "")
+    assert "y_umur_teramati_hari" in pd_kamus.get("y_umur_hari", "")
+
+
+def test_nan_debt_to_ebitda_memang_ebitda_nonpositif(abt_pd):
+    """Kalau NaN-nya berasal dari sebab lain, catatan di kamus jadi menyesatkan."""
+    lk = read_table("gold", "fact_laporan_keuangan")
+    akhir = lk[lk["is_tahun_terakhir"]].set_index("cif_sk")["ebitda_rp"]
+    kosong = abt_pd.set_index("cif_sk")["fin_debt_to_ebitda"].isna()
+    ebitda = akhir.reindex(kosong.index)
+    assert (ebitda[kosong] <= 0).all(), "ada NaN debt_to_ebitda dengan EBITDA positif"
+
+
+def test_ruang_fitur_lgd_sejajar():
+    """Model LGD dilatih di satu tabel dan dipanggil di tabel lain.
+
+    Regresi: abt_lgd_sumber sempat memuat 6 fitur yang tidak ada di abt_lgd
+    (nilai USD, jumlah pegawai, negara bagian Amerika), sehingga model yang
+    dilatih dengan seluruh fitur gagal saat predict() dipanggil pada portofolio.
+    """
+    sumber = read_table("gold", "abt_lgd_sumber")
+    terap = read_table("gold", "abt_lgd")
+
+    fitur_latih = {c for c in sumber.columns if c.startswith("app_")}
+    fitur_terap = {c for c in terap.columns if c.startswith("app_")}
+
+    assert not (fitur_latih - fitur_terap), (
+        "abt_lgd_sumber memuat fitur yang tidak ada saat menerapkan: "
+        f"{sorted(fitur_latih - fitur_terap)}"
+    )
+    for kolom in FITUR_LGD_TERAPAN:
+        assert kolom in sumber.columns, f"{kolom} hilang dari data latih"
+        assert kolom in terap.columns, f"{kolom} hilang dari data terapan"
+
+
+def test_model_lgd_bisa_dilatih_lalu_diterapkan():
+    """Uji ujung ke ujung: latih di sumber, panggil di portofolio."""
+    from sklearn.compose import ColumnTransformer
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+    sumber = read_table("gold", "abt_lgd_sumber")
+    terap = read_table("gold", "abt_lgd")
+
+    kat = [c for c in FITUR_LGD_TERAPAN if sumber[c].dtype == object or str(sumber[c].dtype) in ("string", "bool", "category")]
+    num = [c for c in FITUR_LGD_TERAPAN if c not in kat]
+    prep = ColumnTransformer(
+        [
+            ("k", make_pipeline(SimpleImputer(strategy="most_frequent"), OneHotEncoder(handle_unknown="ignore")), kat),
+            ("n", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()), num),
+        ]
+    )
+    model = make_pipeline(prep, Ridge(alpha=1.0))
+    latih = sumber[sumber["split"] == "latih"].head(20_000)
+    model.fit(latih[FITUR_LGD_TERAPAN], latih["y_lgd_realisasi"])
+
+    prediksi = model.predict(terap[FITUR_LGD_TERAPAN])
+    assert len(prediksi) == len(terap)
+    assert ((prediksi >= 0) & (prediksi <= 1.5)).all(), "prediksi LGD di luar rentang wajar"

@@ -58,8 +58,18 @@ def _embedding_svd(g: nx.Graph, urutan: list[int]) -> np.ndarray | None:
         return None
     a = nx.to_scipy_sparse_array(g, nodelist=urutan, weight="bobot", format="csr").astype(float)
     k = min(DIMENSI_EMBEDDING, min(a.shape) - 1)
-    u, s, _ = svds(a, k=k)
-    emb = u * s
+    u, s, _ = svds(a, k=k, random_state=settings.seed)
+
+    # ARPACK mengembalikan vektor singular dengan tanda sembarang, urutan menaik,
+    # dan bebas berotasi di dalam subruang yang nilai singularnya kembar. Tanpa
+    # dikanonikkan, 16 kolom embedding berubah tiap kali pipeline dijalankan
+    # ulang - fitur yang dipakai model diam-diam bergeser padahal datanya sama.
+    urut = np.argsort(s)[::-1]
+    u, s = u[:, urut], s[urut]
+    baris_dominan = np.abs(u).argmax(axis=0)
+    tanda = np.sign(u[baris_dominan, np.arange(u.shape[1])])
+    tanda[tanda == 0] = 1.0
+    emb = (u * tanda) * s
     if emb.shape[1] < DIMENSI_EMBEDDING:
         emb = np.pad(emb, ((0, 0), (0, DIMENSI_EMBEDDING - emb.shape[1])))
     return emb

@@ -114,3 +114,56 @@ def test_setiap_debitur_punya_provenance():
     dim = read_table("gold", "dim_debitur")
     for kolom in ("src_us_company", "src_icij_node_id", "src_taiwan_row_id"):
         assert dim[kolom].notna().all(), f"{kolom} kosong - provenance join wajib tercatat"
+
+
+def test_embedding_graf_terkanonikkan():
+    """Regresi: 16 kolom embedding sempat berubah tiap pipeline dijalankan ulang.
+
+    ARPACK (scipy svds) memberi tanda sembarang dan urutan nilai singular menaik,
+    jadi embedding bergeser tanpa datanya berubah sedikit pun. Tanpa
+    kanonikalisasi, data scientist melatih di fitur yang diam-diam berbeda dari
+    yang dipakai kemarin.
+
+    Diuji di GRAPH_SNAPSHOT_BULANAN, bukan FEAT_GRAF_PIT: kanonikalisasi berlaku
+    atas seluruh simpul graf, sedangkan FEAT_GRAF_PIT hanya memuat baris debitur.
+    """
+    snap = read_table("gold", "graph_snapshot_bulanan")
+    kolom = [c for c in snap.columns if c.startswith("emb_")]
+    assert len(kolom) == 16
+
+    satu = snap[snap["snapshot_date"] == snap["snapshot_date"].min()]
+    for c in kolom:
+        v = satu[c].dropna()
+        if len(v):
+            assert v.loc[v.abs().idxmax()] > 0, f"tanda {c} belum dikanonikkan"
+
+    # Nilai singular menurun: ragam kolom pertama >= kolom terakhir.
+    ragam = satu[kolom].var()
+    assert ragam.iloc[0] >= ragam.iloc[-1], "urutan embedding tidak menurun"
+
+
+def test_parameter_build_tercatat_dan_cocok():
+    """Regresi: `.env` yang tertinggal sempat menimpa N_DEBITUR tanpa terdeteksi.
+
+    Kode di 6000, `.env` di 3000 -> populasi separuh, kejadian di uji OOT turun
+    dari 14 ke 3, seluruh angka ablasi bergeser. Gejalanya menyamar sebagai
+    pipeline yang tidak deterministik, padahal pipeline-nya reproducible dan
+    yang berubah parameternya.
+    """
+    par = read_table("gold", "parameter_build")
+    nilai = par.set_index("parameter")["nilai"]
+
+    assert str(nilai["n_debitur"]) == str(settings.n_debitur)
+    assert str(nilai["seed"]) == str(settings.seed)
+
+    debitur = read_table("gold", "dim_debitur", columns=["cif_sk", "is_current"])
+    assert int(debitur["is_current"].sum()) == settings.n_debitur
+
+    # Kolom `sumber` adalah inti tabel ini - ia menandai penimpaan dari .env.
+    assert set(par["sumber"].str.split(":").str[0]) <= {
+        "default_kode",
+        "env",
+        "turunan",
+        "lingkungan",
+    }
+    assert "git_commit" in par["parameter"].values

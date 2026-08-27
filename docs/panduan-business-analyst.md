@@ -250,8 +250,15 @@ Kalau angka di dashboard Anda tiba-tiba bergeser padahal query-nya tidak
 berubah, artinya seseorang menjalankan ulang pipeline dengan parameter berbeda —
 paling sering `N_DEBITUR` atau porsi angkatan di `pipelines/config.py`.
 
-Periksa `gold.data_quality_report` (69 uji, kolom `dijalankan_pada`) untuk
-mengetahui kapan layer gold terakhir dibangun dan apakah semuanya lolos.
+Periksa dua tabel:
+
+- **`gold.parameter_build`** — parameter efektif build ini (`n_debitur`, `seed`,
+  `git_commit`, waktu bangun). Kolom `sumber` menandai parameter yang ditimpa
+  berkas `.env`; itulah yang biasanya menjelaskan kenapa angka berubah.
+- **`gold.data_quality_report`** — hasil uji kualitas beserta `dijalankan_pada`.
+
+Pipeline-nya sendiri deterministik: seed sama menghasilkan berkas identik byte
+per byte. Kalau angka bergeser, yang berubah parameternya, bukan pipeline-nya.
 
 Pertanyaan soal definisi kolom: `gold.kamus_data_abt` memuat kamus per kolom,
 dan `gold.katalog_kolom_terlarang` mendaftar kolom yang **tidak boleh** dipakai
