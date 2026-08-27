@@ -492,6 +492,64 @@ def uji_abt(h: Hasil) -> None:
             kritis=False,
         )
 
+    # ---- DIM_ALAMAT: alamat sebagai entitas yang bisa dicocokkan
+    if table_exists("gold", "dim_alamat"):
+        dim_alamat = read_table("gold", "dim_alamat")
+        jembatan_alamat = read_table("gold", "fact_alamat_debitur")
+
+        # Kunci pencocokan harus unik, kalau tidak satu alamat terpecah dua dan
+        # debitur yang sekantor tidak pernah bertemu.
+        h.catat(
+            "alamat_kunci_normal_unik",
+            bool(dim_alamat["alamat_normal"].is_unique),
+            f"{len(dim_alamat)} alamat, {dim_alamat['alamat_normal'].nunique()} kunci unik",
+        )
+
+        # Teks alamat asli ICIJ adalah data nyata dari dokumen bocoran dan tidak
+        # boleh ikut ke gold - sama seperti nama asli ICIJ.
+        asli = set(
+            read_table("silver", "sl_icij_address", columns=["address"])["address"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+        bocor = set(dim_alamat["alamat_teks"].dropna().astype(str).str.strip()) & asli
+        h.catat(
+            "alamat_asli_icij_tidak_ikut_ke_gold",
+            not bocor,
+            f"{len(bocor)} alamat asli ICIJ ikut ke gold",
+        )
+
+        # Alamat agen registrasi wajib ditandai. Tanpa ini satu kantor notaris
+        # berisi ratusan badan hukum terbaca sebagai satu grup usaha raksasa.
+        agen = dim_alamat[dim_alamat["is_alamat_agen"]]
+        h.catat(
+            "alamat_agen_ditandai",
+            bool((agen["jumlah_debitur"] > 20).all()) if len(agen) else True,
+            f"{len(agen)} alamat ditandai agen registrasi",
+            kritis=False,
+        )
+
+        # Inti nilai tabel ini: menemukan keterkaitan yang TIDAK terlihat di
+        # grup usaha. Kalau nol, alamat tidak menambah apa pun di atas grup_id.
+        peta_grup_alamat = (
+            read_table("gold", "dim_debitur", columns=["cif_sk", "grup_id", "is_current"])
+            .query("is_current")
+            .set_index("cif_sk")["grup_id"]
+        )
+        layak = jembatan_alamat[
+            jembatan_alamat["alamat_id"].isin(dim_alamat[~dim_alamat["is_alamat_agen"]]["alamat_id"])
+        ]
+        grup_per_alamat = layak.assign(grup=layak["cif_sk"].map(peta_grup_alamat)).groupby(
+            "alamat_id"
+        )["grup"].nunique()
+        lintas = int((grup_per_alamat > 1).sum())
+        h.catat(
+            "alamat_menemukan_keterkaitan_lintas_grup",
+            lintas > 0,
+            f"{lintas} alamat dipakai debitur dari lebih dari satu grup usaha",
+        )
+
     # Ruang fitur LGD harus sejajar: model dilatih di satu tabel, dipanggil di lain.
     fitur_latih = {c for c in read_table("gold", "abt_lgd_sumber").columns if c.startswith("app_")}
     fitur_terap = {c for c in read_table("gold", "abt_lgd").columns if c.startswith("app_")}

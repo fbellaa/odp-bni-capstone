@@ -125,6 +125,35 @@ hendak ditunjukkan produk ini.
 `fact_afiliasi_tersembunyi` adalah kunci jawaban untuk mengevaluasi deteksi.
 Jangan dipakai sebagai input laporan yang seolah-olah bank sudah mengetahuinya.
 
+Yang **boleh** dipakai sebagai input laporan adalah `dim_alamat` dan
+`fact_alamat_debitur`. Dua tabel itu berisi alamat operasional yang memang
+diketahui bank dari dokumen domisili usaha, dan dari sanalah keterkaitan lintas
+grup bisa ditemukan secara sah:
+
+```sql
+-- Debitur yang berbagi alamat operasional TAPI beda grup usaha.
+SELECT a.alamat_id, a.alamat_teks,
+       COUNT(DISTINCT d.grup_id) AS jumlah_grup,
+       COUNT(DISTINCT d.cif_sk)  AS jumlah_debitur
+FROM gold.dim_alamat a
+JOIN gold.fact_alamat_debitur fa ON fa.alamat_id = a.alamat_id
+JOIN gold.dim_debitur d          ON d.cif_sk = fa.cif_sk AND d.is_current
+WHERE NOT a.is_alamat_agen
+GROUP BY a.alamat_id, a.alamat_teks
+HAVING COUNT(DISTINCT d.grup_id) > 1
+ORDER BY jumlah_debitur DESC;
+```
+
+`is_alamat_agen` menandai alamat yang dipakai lebih dari 20 debitur — itu kantor
+agen registrasi, bukan tanda keterkaitan usaha. **Selalu saring kolom itu**,
+kalau tidak laporan Anda akan mengaku menemukan satu "grup" berisi ratusan
+badan hukum yang cuma sekantor notaris.
+
+Alamat pada `dim_alamat` adalah alamat **sintetis**. Alamat asli ICIJ tidak
+dibawa ke gold karena itu data nyata dari dokumen bocoran; yang dipertahankan
+hanya strukturnya — dua debitur yang berbagi alamat di sumber tetap berbagi
+alamat di sini.
+
 ---
 
 ## 3. Resep siap pakai

@@ -46,10 +46,12 @@ data/gold/  -> (opsional) Postgres skema `gold`
 | `generators/sintesis.py` | Langkah 6: konteks Indonesia, agunan, covenant, kolektibilitas. |
 | `generators/afiliasi.py` | Langkah 7: injeksi afiliasi tersembunyi + ground truth. |
 | `graph/struktur.py` | `GOLD_GRAPH_NODES`, `GOLD_GRAPH_EDGES`, relasi ICIJ, transfer giro. |
+| `graph/alamat.py` | `DIM_ALAMAT`, `FACT_ALAMAT_DEBITUR` - alamat sebagai entitas. |
+| `graph/resolusi.py` | Pencocokan calon nasabah baru ke graf (entity resolution). |
 | `graph/fitur_pit.py` | `GRAPH_SNAPSHOT_BULANAN`, `FEAT_GRAF_PIT`. |
 | `exports/abt.py` | Analytic Base Table PD / EWS / LGD + kamus data. |
 | `parameter.py` | Catat parameter efektif build ke `gold.parameter_build`. |
-| `quality/checks.py` | 69 uji, termasuk tiga lapis uji kebocoran waktu. |
+| `quality/checks.py` | 78 uji, termasuk tiga lapis uji kebocoran waktu. |
 | `loaders/postgres.py` | Materialisasi parquet gold ke skema `gold`. |
 | `flows/` | Flow Prefect per layer + `main_flow`. |
 
@@ -237,6 +239,52 @@ dan daftar anomali sintetis yang tidak boleh dijadikan temuan.
 
 ---
 
+## 5b. Calon nasabah baru: dari formulir RM ke graf
+
+Debitur yang baru mengajukan belum punya satu pun edge di `GOLD_GRAPH_EDGES`.
+Seluruh fitur graf kosong, dan pertanyaan "apakah calon ini terafiliasi dengan
+debitur lain di portofolio" tidak bisa dijawab dari tabel mana pun.
+
+`graph/resolusi.py` menjawabnya dari tiga berkas yang **memang sudah wajib**
+dikumpulkan saat CDD - bukan data baru yang harus diminta:
+
+| Berkas yang diunggah RM | Yang diambil | Dicocokkan ke | Bisa sejak hari-1? |
+|---|---|---|---|
+| Akta / data kepemilikan | nama pengurus & pemegang saham | `DIM_PIHAK` | ya |
+| Dokumen domisili usaha | alamat operasional | `DIM_ALAMAT` | ya |
+| Rekening koran | rekening lawan transaksi | `BRIDGE_REKENING` | tidak |
+
+Dua yang pertama bersifat **identitas**, jadi bekerja pada hari pengajuan. Yang
+ketiga bersifat **perilaku** dan butuh riwayat mutasi - untuk perusahaan yang
+benar-benar baru hasilnya kosong, dan `HasilResolusi.jalur_kosong` melaporkannya
+sebagai "belum dicari", bukan "tidak ada afiliasi". Perbedaan itu penting: yang
+pertama tidak diketahui, yang kedua klaim yang tidak dipunyai datanya.
+
+```python
+from pipelines.graph.resolusi import telusuri_afiliasi
+
+hasil = telusuri_afiliasi(
+    tanggal="2025-06-30",                       # tanggal penilaian
+    alamat_operasional="Jl. Merdeka No. 12",
+    nama_pengurus=["Bapak Andi Wijaya, S.E."],
+    rekening_lawan=["ACC-00123", "ACC-00987"],
+)
+hasil.jumlah_kandidat   # debitur eksisting yang layak ditelaah
+hasil.perlu_telaah      # pemicu KKK-13.6 (>=3 kandidat atau ada pengurus bersama)
+hasil.kandidat          # daftar + kolom `dasar`: kenapa tiap baris muncul
+```
+
+Keluarannya **bukan skor risiko** dan tidak boleh diperlakukan begitu. Ia daftar
+kandidat berikut alasannya - bentuk yang dibutuhkan penelaahan BMPK dan pihak
+terafiliasi, di mana yang menentukan aturan kebijakan, bukan model.
+
+Seluruh fungsinya menerima `tanggal` dan tunduk pada aturan titik-waktu yang sama
+dengan `fitur_pit.py`: hanya edge yang sudah berlaku dan gagal bayar yang sudah
+terjadi. Kalau dilonggarkan, angka yang muncul di layar RM tidak akan pernah bisa
+direproduksi model.
+
+---
+
 ## 6. Yang belum dikerjakan
 
 - `pipelines/dbt/` masih kosong. Transformasi gold ditulis dengan pandas, bukan
@@ -252,3 +300,11 @@ dan daftar anomali sintetis yang tidak boleh dijadikan temuan.
   statistik (selang kepercayaan mencakup nol pada 14 kejadian uji).
 - Narasi RM dan korpus kebijakan kredit (LLM-generated) di luar cakupan pipeline
   ini.
+- `graph/resolusi.py` mencocokkan alamat dengan normalisasi tekstual, bukan
+  geocoding. Variasi penulisan yang lazim tertangkap ('Jl.' vs 'Jalan'), alamat
+  yang benar-benar ditulis ulang tidak. Ambangnya (`AMBANG_ALAMAT`,
+  `AMBANG_NAMA`) belum dikalibrasi terhadap data alamat nyata - angka sekarang
+  dipilih konservatif supaya analis tidak dibanjiri positif palsu.
+- Unggahan berkas RM (laporan keuangan, akta, rekening koran) belum ada
+  parser-nya. `resolusi.py` menerima hasil ekstraksinya (daftar nama, string
+  alamat, daftar rekening lawan), bukan PDF-nya.

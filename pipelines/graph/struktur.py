@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from pipelines.config import settings
+from pipelines.graph import alamat as mod_alamat
 from pipelines.utils import read_table, write_table
 
 LOG = logging.getLogger("pipelines.graph")
@@ -214,8 +215,8 @@ def buat_nodes_dan_edges(
     transfer = lapisan["fact_transfer_giro"]
     kepemilikan = lapisan["fact_kepemilikan"]
     kepengurusan = lapisan["fact_kepengurusan"]
-    alamat = read_table("silver", "sl_icij_alamat_terpilih")
-    peta_entitas = read_table("silver", "sl_peta_cif", columns=["cif_sk", "node_id"])
+    dim_alamat = lapisan["dim_alamat"]
+    jembatan_alamat = lapisan["fact_alamat_debitur"]
 
     nodes = []
     nodes.append(
@@ -248,6 +249,21 @@ def buat_nodes_dan_edges(
             }
         )
     )
+    # Alamat adalah simpul, bukan sekadar kunci join. Tanpa ini teks alamatnya
+    # berhenti di layer silver dan alamat calon nasabah baru tidak punya apa pun
+    # untuk dicocokkan (lihat graph/alamat.py dan graph/resolusi.py).
+    if len(dim_alamat):
+        nodes.append(
+            pd.DataFrame(
+                {
+                    "node_type": TIPE_NODE_ALAMAT,
+                    "ref_id": dim_alamat["alamat_id"],
+                    "grup_id": pd.NA,
+                    "valid_from": pd.Timestamp(settings.tanggal_default_edge),
+                }
+            )
+        )
+
     # Pihak nominee untuk mekanisme afiliasi tersembunyi. Bentuknya sama persis
     # dengan pihak ICIJ lain supaya tidak bisa dibedakan dari struktur.
     peta_nominee: dict[int, int] = {}
@@ -314,26 +330,36 @@ def buat_nodes_dan_edges(
             )
         )
 
-    # berbagi_atribut: debitur <-> debitur yang beralamat domisili sama
-    entitas_ke_cif = peta_entitas.set_index("node_id")["cif_sk"]
-    al = alamat.copy()
-    al["cif_sk"] = al["node_id_start"].map(entitas_ke_cif)
-    al = al.dropna(subset=["cif_sk"])
-    pasangan = []
-    for _, sub in al.groupby("node_id_end"):
-        anggota = sorted(set(sub["cif_sk"].astype(int)))
-        if 2 <= len(anggota) <= 20:
-            tanggal = sub["valid_from"].min()
-            for i in range(len(anggota)):
-                for j in range(i + 1, len(anggota)):
-                    pasangan.append((anggota[i], anggota[j], tanggal))
-    if pasangan:
-        pa = pd.DataFrame(pasangan, columns=["a", "b", "valid_from"])
+    # beralamat_di: debitur -> alamat. Edge inilah yang membuat alamat bisa
+    # ditelusuri dua arah - dari debitur ke alamatnya, dan dari satu alamat ke
+    # seluruh debitur yang memakainya.
+    if len(jembatan_alamat):
         edges.append(
             pd.DataFrame(
                 {
-                    "src_node_id": id_node(TIPE_NODE_DEBITUR, pa["a"]),
-                    "dst_node_id": id_node(TIPE_NODE_DEBITUR, pa["b"]),
+                    "src_node_id": id_node(TIPE_NODE_DEBITUR, jembatan_alamat["cif_sk"]),
+                    "dst_node_id": id_node(TIPE_NODE_ALAMAT, jembatan_alamat["alamat_id"]),
+                    "rel_type": "beralamat_di",
+                    "bobot": 1.0,
+                    "berarah": True,
+                    "valid_from": jembatan_alamat["valid_from"],
+                    "valid_to": jembatan_alamat["valid_to"],
+                    "sumber": "icij",
+                }
+            )
+        )
+
+    # berbagi_atribut: debitur <-> debitur yang berbagi alamat operasional.
+    # Pasangannya diturunkan dari DIM_ALAMAT, jadi alamat ICIJ dan alamat klaster
+    # afiliasi tersembunyi melewati jalur yang sama persis - tidak ada bentuk
+    # edge yang membedakan keduanya.
+    pa = mod_alamat.pasangan_seralamat(dim_alamat, jembatan_alamat)
+    if len(pa):
+        edges.append(
+            pd.DataFrame(
+                {
+                    "src_node_id": id_node(TIPE_NODE_DEBITUR, pa["cif_a"]),
+                    "dst_node_id": id_node(TIPE_NODE_DEBITUR, pa["cif_b"]),
                     "rel_type": "berbagi_atribut",
                     "bobot": 1.0,
                     "berarah": False,
@@ -411,22 +437,9 @@ def buat_nodes_dan_edges(
                     }
                 )
             )
-        al = afiliasi.get("alamat")
-        if al is not None and len(al):
-            edges.append(
-                pd.DataFrame(
-                    {
-                        "src_node_id": id_node(TIPE_NODE_DEBITUR, al["cif_a"]),
-                        "dst_node_id": id_node(TIPE_NODE_DEBITUR, al["cif_b"]),
-                        "rel_type": "berbagi_atribut",
-                        "bobot": 1.0,
-                        "berarah": False,
-                        "valid_from": al["valid_from"],
-                        "valid_to": pd.NaT,
-                        "sumber": "icij",
-                    }
-                )
-            )
+        # Mekanisme alamat_operasional_bersama tidak ditangani di sini. Klaster
+        # itu mendapat baris DIM_ALAMAT sungguhan lewat graph/alamat.py, lalu
+        # ikut jalur berbagi_atribut di atas bersama alamat ICIJ biasa.
         pas = afiliasi.get("pasokan")
         if pas is not None and len(pas):
             edges.append(
@@ -472,12 +485,17 @@ def build_struktur_graf() -> dict[str, int]:
     lapisan = {**relasi, **giro}
 
     edge_afiliasi = None
+    klaster = None
     if settings.injeksi_afiliasi:
         from pipelines.generators import afiliasi as mod_afiliasi
 
         klaster = mod_afiliasi.build_afiliasi()
         edge_afiliasi = mod_afiliasi.edge_afiliasi(klaster, rng)
         lapisan["fact_afiliasi_tersembunyi"] = klaster
+
+    # Alamat dibangun setelah klaster afiliasi supaya alamat operasional bersama
+    # milik klaster ikut masuk DIM_ALAMAT lewat pintu yang sama.
+    lapisan.update(mod_alamat.bangun_dim_alamat(klaster))
 
     graf = buat_nodes_dan_edges(lapisan, edge_afiliasi)
 

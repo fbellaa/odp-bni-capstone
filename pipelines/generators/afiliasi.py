@@ -193,14 +193,20 @@ def edge_afiliasi(
     Edge hasil injeksi TIDAK diberi penanda apa pun di GOLD_GRAPH_EDGES - kalau
     ditandai, ia tidak lagi tersembunyi. Ground truth-nya hidup terpisah di
     FACT_AFILIASI_TERSEMBUNYI dan terdaftar sebagai kolom terlarang.
+
+    Mekanisme alamat_operasional_bersama tidak dikembalikan di sini. Klaster itu
+    ditangani graph/alamat.py, yang memberinya baris DIM_ALAMAT sungguhan lalu
+    menurunkan edge berbagi_atribut-nya lewat jalur yang sama dengan alamat ICIJ.
+    Menyambung pasangannya langsung dari sini akan menghasilkan klaster yang
+    berbagi alamat TANPA punya simpul alamat - penanda yang membocorkan injeksi.
     """
     if klaster.empty:
-        return {"kepengurusan": pd.DataFrame(), "alamat": pd.DataFrame(), "pasokan": pd.DataFrame()}
+        return {"kepengurusan": pd.DataFrame(), "pasokan": pd.DataFrame()}
 
     pengajuan_awal = pd.Timestamp(settings.buku_baru_awal_pengajuan)
     valid_from = pengajuan_awal - pd.DateOffset(months=BULAN_EDGE_MENDAHULUI)
 
-    kepengurusan, alamat, pasokan = [], [], []
+    kepengurusan, pasokan = [], []
     for afiliasi_id, sub in klaster.groupby("afiliasi_id"):
         anggota = sub["cif_sk"].tolist()
         mekanisme = sub["mekanisme"].iloc[0]
@@ -212,16 +218,7 @@ def edge_afiliasi(
                     {"afiliasi_id": afiliasi_id, "cif_sk": cif, "valid_from": valid_from}
                 )
         elif mekanisme == "alamat_operasional_bersama":
-            for i in range(len(anggota)):
-                for j in range(i + 1, len(anggota)):
-                    alamat.append(
-                        {
-                            "afiliasi_id": afiliasi_id,
-                            "cif_a": anggota[i],
-                            "cif_b": anggota[j],
-                            "valid_from": valid_from,
-                        }
-                    )
+            continue  # ditangani graph/alamat.py lewat DIM_ALAMAT
         else:  # siklus_pembayaran
             for i, cif in enumerate(anggota):
                 pasokan.append(
@@ -236,6 +233,5 @@ def edge_afiliasi(
 
     return {
         "kepengurusan": pd.DataFrame(kepengurusan),
-        "alamat": pd.DataFrame(alamat),
         "pasokan": pd.DataFrame(pasokan),
     }
