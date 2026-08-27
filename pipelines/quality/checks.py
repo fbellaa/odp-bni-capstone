@@ -16,7 +16,7 @@ import networkx as nx
 import pandas as pd
 
 from pipelines.config import QUALITY_DIR, settings
-from pipelines.utils import read_table, write_table
+from pipelines.utils import read_table, table_exists, write_table
 
 LOG = logging.getLogger("pipelines.quality")
 
@@ -260,6 +260,53 @@ def uji_konsistensi_waktu(h: Hasil) -> None:
     )
 
 
+def uji_parameter_build(h: Hasil) -> None:
+    """Parameter efektif harus tercatat dan cocok dengan konfigurasi saat ini.
+
+    Regresi: `.env` yang tertinggal memuat N_DEBITUR=3000 sementara kode sudah
+    di 6000, sehingga dua build menghasilkan populasi berbeda dengan seed sama.
+    Gejalanya menyamar sebagai nondeterminisme.
+    """
+    if not table_exists("gold", "parameter_build"):
+        h.catat("parameter_build_tercatat", False, "gold.parameter_build tidak ada")
+        return
+
+    par = read_table("gold", "parameter_build").set_index("parameter")["nilai"]
+    h.catat("parameter_build_tercatat", True, f"{len(par)} parameter tercatat")
+
+    cocok = str(par.get("n_debitur")) == str(settings.n_debitur)
+    h.catat(
+        "parameter_build_cocok_dengan_konfigurasi",
+        cocok,
+        f"n_debitur tercatat {par.get('n_debitur')} vs konfigurasi {settings.n_debitur}",
+    )
+
+    debitur = read_table("gold", "dim_debitur", columns=["cif_sk", "is_current"])
+    jumlah = int(debitur["is_current"].sum())
+    h.catat(
+        "jumlah_debitur_sesuai_parameter",
+        jumlah == settings.n_debitur,
+        f"{jumlah} debitur aktif vs n_debitur {settings.n_debitur}",
+    )
+
+    # Yang berbahaya bukan "parameter datang dari .env", melainkan "nilainya BEDA
+    # dari default kode". Berkas .env tidak masuk git, jadi selisih seperti itu
+    # membuat dua orang dengan kode identik menghasilkan data berbeda.
+    par = read_table("gold", "parameter_build")
+    dari_env = par[par["sumber"].str.startswith("env:")]
+    menyimpang = dari_env[
+        (dari_env["default_kode"] != "") & (dari_env["nilai"] != dari_env["default_kode"])
+    ]
+    rincian = [
+        f"{b.parameter}={b.nilai} (default {b.default_kode})" for b in menyimpang.itertuples()
+    ]
+    h.catat(
+        "parameter_env_tidak_menyimpang_dari_default",
+        not rincian,
+        f"menyimpang dari default kode: {rincian or 'tidak ada'}",
+    )
+
+
 def uji_kewajaran_statistik(h: Hasil) -> None:
     debitur = read_table("gold", "dim_debitur")
     kini = debitur[debitur["is_current"]]
@@ -331,7 +378,15 @@ def uji_abt(h: Hasil) -> None:
     h.catat("abt_pd_split_oot_tidak_beririsan", not beririsan, f"{len(beririsan)} cif ada di dua split")
 
     # Semua fitur harus punya prefiks blok yang dikenal.
-    kunci = {"application_id", "facility_id", "cif_sk", "grup_id", "snapshot_date", "split"}
+    kunci = {
+        "application_id",
+        "facility_id",
+        "cif_sk",
+        "grup_id",
+        "angkatan",
+        "snapshot_date",
+        "split",
+    }
     liar = [
         c
         for c in abt_pd.columns
@@ -367,6 +422,86 @@ def uji_abt(h: Hasil) -> None:
         f"selisih {len(fitur_pd ^ fitur_tolak)} kolom",
     )
 
+    # ---- injeksi afiliasi tersembunyi (langkah 7)
+    if table_exists("gold", "fact_afiliasi_tersembunyi"):
+        klaster = read_table("gold", "fact_afiliasi_tersembunyi")
+
+        # Ground truth tidak boleh bocor ke ABT dalam bentuk apa pun.
+        jejak = [
+            c
+            for c in abt_pd.columns
+            if any(k in c for k in ("afiliasi", "klaster", "peran", "mekanisme"))
+        ]
+        h.catat(
+            "afiliasi_ground_truth_tidak_bocor",
+            not jejak,
+            f"kolom berjejak afiliasi di abt_pd: {jejak or 'tidak ada'}",
+        )
+
+        # Klaster wajib melintasi grup usaha yang kasat mata - kalau tidak,
+        # afiliasinya bukan tersembunyi, cuma duplikat DIM_GRUP_USAHA.
+        peta_grup = (
+            read_table("gold", "dim_debitur", columns=["cif_sk", "grup_id", "is_current"])
+            .query("is_current")
+            .set_index("cif_sk")["grup_id"]
+        )
+        grup_per_klaster = klaster.assign(grup=klaster["cif_sk"].map(peta_grup)).groupby(
+            "afiliasi_id"
+        )["grup"].nunique()
+        h.catat(
+            "afiliasi_melintasi_grup",
+            bool((grup_per_klaster > 1).all()),
+            f"{int((grup_per_klaster <= 1).sum())} klaster tidak melintasi grup",
+        )
+
+        # Sumber harus benar-benar jatuh SEBELUM anggota terinfeksi mengajukan.
+        default = read_table("gold", "fact_default", columns=["cif_sk", "tanggal_default"])
+        pengajuan = read_table("gold", "fact_pengajuan", columns=["cif_sk", "tanggal_pengajuan"])
+        sumber_tgl = (
+            klaster[klaster["peran"] == "sumber"]
+            .merge(default, on="cif_sk")
+            .groupby("afiliasi_id")["tanggal_default"]
+            .min()
+        )
+        infeksi_tgl = (
+            klaster[klaster["peran"] == "terinfeksi"]
+            .merge(pengajuan, on="cif_sk")
+            .groupby("afiliasi_id")["tanggal_pengajuan"]
+            .min()
+        )
+        bersama = sumber_tgl.index.intersection(infeksi_tgl.index)
+        melanggar = int((sumber_tgl[bersama] >= infeksi_tgl[bersama]).sum())
+        h.catat(
+            "afiliasi_penularan_hanya_ke_belakang",
+            melanggar == 0,
+            f"{melanggar} dari {len(bersama)} klaster: sumber jatuh setelah terinfeksi mengajukan",
+        )
+
+        # Kadar kebocoran residual - dilaporkan, bukan digagalkan.
+        label = (
+            read_table("gold", "dim_debitur", columns=["cif_sk", "label_default_debitur", "is_current"])
+            .query("is_current")
+            .set_index("cif_sk")["label_default_debitur"]
+        )
+        anggota_baru = klaster[klaster["peran"].isin(["terinfeksi", "sehat"])]
+        kadar = float(anggota_baru["cif_sk"].map(label).mean())
+        h.catat(
+            "afiliasi_dilusi_keanggotaan",
+            0.15 <= kadar <= 0.50,
+            f"P(gagal bayar | anggota klaster buku baru) = {kadar:.1%}",
+            kritis=False,
+        )
+
+    # Ruang fitur LGD harus sejajar: model dilatih di satu tabel, dipanggil di lain.
+    fitur_latih = {c for c in read_table("gold", "abt_lgd_sumber").columns if c.startswith("app_")}
+    fitur_terap = {c for c in read_table("gold", "abt_lgd").columns if c.startswith("app_")}
+    tidak_terpakai = sorted(fitur_latih - fitur_terap)
+    h.catat(
+        "lgd_ruang_fitur_sejajar",
+        not tidak_terpakai,
+        f"fitur latih yang tak ada saat menerapkan: {tidak_terpakai or 'tidak ada'}",
+    )
+
     sumber = read_table("gold", "abt_lgd_sumber", columns=["y_lgd_realisasi", "split"])
     h.catat(
         "abt_lgd_sumber_cukup_besar",
@@ -385,6 +520,7 @@ def jalankan_semua(strict: bool = True) -> pd.DataFrame:
     uji_pemisahan_label(h)
     uji_kebocoran_waktu(h)
     uji_kewajaran_statistik(h)
+    uji_parameter_build(h)
     uji_abt(h)
 
     df = h.dataframe()

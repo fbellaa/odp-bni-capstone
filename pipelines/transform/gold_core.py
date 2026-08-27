@@ -34,6 +34,13 @@ def build_gold_core() -> dict[str, int]:
         dim_debitur, fact_fasilitas, fact_kolektibilitas, rng
     )
 
+    from pipelines.parameter import tulis_parameter_build
+    from pipelines.utils import table_exists
+
+    # Catat parameter efektif yang menghasilkan build ini. Tanpa ini, selisih
+    # parameter (mis. .env menimpa default kode) menyamar sebagai nondeterminisme.
+    tulis_parameter_build()
+
     tabel = {
         "dim_debitur": dim_debitur,
         "dim_grup_usaha": dim_grup,
@@ -47,6 +54,13 @@ def build_gold_core() -> dict[str, int]:
         "fact_default": fact_default,
         "fact_eksposur_grup": fact_eksposur,
     }
+    if table_exists("silver", "sl_afiliasi_tersembunyi"):
+        # Ground truth langkah 7. HANYA untuk evaluasi deteksi - terdaftar di
+        # gold.katalog_kolom_terlarang dan tidak boleh masuk ABT mana pun.
+        from pipelines.utils import read_table as _baca
+
+        tabel["fact_afiliasi_tersembunyi"] = _baca("silver", "sl_afiliasi_tersembunyi")
+
     for nama, df in tabel.items():
         write_table(df, "gold", nama)
 

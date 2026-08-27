@@ -168,6 +168,7 @@ def buat_dim_debitur(rng: np.random.Generator) -> pd.DataFrame:
             "penjualan_rp": df["penjualan_rp"].round(0),
             "tahun_berdiri": df["tahun_berdiri"],
             "grup_id": df["grup_id"],
+            "angkatan": df["angkatan"],
             "rating_internal": df["rating_internal"],
             "skor_kredit": df["skor_kredit"],
             "valid_from": pd.Timestamp(settings.snapshot_awal),
@@ -259,6 +260,8 @@ def buat_fact_laporan_keuangan(dim_debitur: pd.DataFrame) -> pd.DataFrame:
         {
             "cif_sk": df["cif_sk"],
             "tahun_buku": df["tahun_buku"],
+            "angkatan": df["angkatan"],
+            "is_tahun_terakhir": df["is_tahun_terakhir"],
             "penjualan_rp": df["penjualan_rp"],
             "total_aset_rp": df["total_aset_rp"],
             "total_liabilitas_rp": df["total_liabilitas_rp"],
@@ -328,11 +331,20 @@ def buat_fact_pengajuan(
         how="left",
     )
 
-    awal = pd.Timestamp(settings.tanggal_awal_pengajuan)
-    rentang = (pd.Timestamp(settings.tanggal_akhir_pengajuan) - awal).days
-    df["tanggal_pengajuan"] = awal + pd.to_timedelta(
-        rng.integers(0, rentang + 1, len(df)), unit="D"
-    )
+    # Tiap angkatan punya jendela pengajuannya sendiri. Buku lama mengajukan
+    # 2022-2023 dan menghasilkan riwayat gagal bayar; buku baru mengajukan 2025
+    # dan karena itu bisa melihat riwayat tersebut lewat fitur graf.
+    tanggal = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+    for nama, par in settings.angkatan.items():
+        pilih = df["angkatan"] == nama
+        if not pilih.any():
+            continue
+        awal = pd.Timestamp(par["awal_pengajuan"])
+        rentang = (pd.Timestamp(par["akhir_pengajuan"]) - awal).days
+        tanggal[pilih] = awal + pd.to_timedelta(
+            rng.integers(0, rentang + 1, int(pilih.sum())), unit="D"
+        )
+    df["tanggal_pengajuan"] = tanggal
 
     # Plafon: 15-45% penjualan tahunan, dipangkas ke rentang Rp 10-150 M.
     porsi = rng.uniform(0.15, 0.45, len(df))
@@ -494,7 +506,7 @@ def buat_fact_covenant(
 ) -> pd.DataFrame:
     """Posisi covenant bulanan: ambang dari kelas rating, nilai aktual dari rasio nyata."""
     rasio_akhir = (
-        laporan[laporan["tahun_buku"] == settings.tahun_buku_terakhir]
+        laporan[laporan["is_tahun_terakhir"]]
         .set_index("cif_sk")[["der", "icr", "debt_to_ebitda"]]
     )
     rating = dim_debitur[dim_debitur["is_current"]].set_index("cif_sk")["rating_internal"]
@@ -568,7 +580,22 @@ def _umur_ke_default(
     hari_sba = hari_sba.fillna(hari_sba.median())
     peringkat = hari_sba.rank(pct=True, method="first")
     umur = UMUR_DEFAULT_MIN_HARI + peringkat * (UMUR_DEFAULT_MAKS_HARI - UMUR_DEFAULT_MIN_HARI)
-    return pd.Series(umur.round().to_numpy(), index=calon["facility_id"].to_numpy())
+    hasil = pd.Series(umur.round().to_numpy(), index=calon["facility_id"].to_numpy())
+
+    # Sumber afiliasi tersembunyi dipaksa jatuh lebih awal, supaya kolapsnya
+    # sempat terlihat sebelum anggota buku baru mengajukan (langkah 7).
+    from pipelines.utils import table_exists
+
+    if settings.injeksi_afiliasi and table_exists("silver", "sl_afiliasi_tersembunyi"):
+        from pipelines.generators.afiliasi import umur_default_paksa
+
+        klaster = read_table("silver", "sl_afiliasi_tersembunyi")
+        paksa = umur_default_paksa(klaster)
+        if len(paksa):
+            per_cif = calon.set_index("facility_id")["cif_sk"]
+            cocok = per_cif.map(paksa).dropna()
+            hasil.loc[cocok.index] = cocok.to_numpy()
+    return hasil
 
 
 def buat_kolektibilitas_dan_default(

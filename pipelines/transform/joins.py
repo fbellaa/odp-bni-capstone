@@ -74,15 +74,31 @@ def pilih_panel_debitur(rng: np.random.Generator) -> pd.DataFrame:
     terpilih = rng.choice(perusahaan, size=jumlah, replace=False)
     panel = panel[panel["company_name"].isin(set(terpilih))].copy()
 
-    # Tahun buku dipetakan supaya panel berakhir di settings.tahun_buku_terakhir.
+    # Bagi ke dua angkatan. Buku lama mengajukan lebih dulu dan menghasilkan
+    # riwayat gagal bayar; buku baru mengajukan setelah riwayat itu ada, jadi
+    # fitur penularan graf punya sesuatu untuk dilihat pada snapshot-nya.
+    urut = np.sort(terpilih)
+    acak = rng.permutation(len(urut))
+    batas = int(round(settings.porsi_buku_lama * len(urut)))
+    angkatan = pd.Series(
+        np.where(acak < batas, "buku_lama", "buku_baru"), index=urut, name="angkatan"
+    )
+    panel["angkatan"] = panel["company_name"].map(angkatan)
+
+    # Tahun buku dipetakan supaya panel berakhir di tahun buku angkatannya.
     panel["urutan_tahun"] = panel.groupby("company_name")["year"].rank(method="dense").astype(int)
-    panel["tahun_buku"] = settings.tahun_buku_terakhir - (n - panel["urutan_tahun"])
+    akhir = panel["angkatan"].map(
+        {k: v["tahun_buku_terakhir"] for k, v in settings.angkatan.items()}
+    )
+    panel["tahun_buku"] = akhir - (n - panel["urutan_tahun"])
+    panel["is_tahun_terakhir"] = panel["urutan_tahun"] == n
 
     LOG.info(
-        "panel terpilih: %s perusahaan x %s tahun = %s firm-year",
+        "panel terpilih: %s perusahaan x %s tahun = %s firm-year | angkatan: %s",
         panel["company_name"].nunique(),
         n,
         len(panel),
+        panel.drop_duplicates("company_name")["angkatan"].value_counts().to_dict(),
     )
     return panel
 
@@ -93,11 +109,12 @@ def terbitkan_cif(panel: pd.DataFrame) -> pd.DataFrame:
     perusahaan["cif_sk"] = np.arange(1, len(perusahaan) + 1, dtype="int64")
     perusahaan["cif"] = "CIF-" + perusahaan["cif_sk"].astype(str).str.zfill(6)
 
-    tahun_akhir = panel[panel["tahun_buku"] == settings.tahun_buku_terakhir]
+    tahun_akhir = panel[panel["is_tahun_terakhir"]]
     perusahaan = perusahaan.merge(
         tahun_akhir[
             [
                 "company_name",
+                "angkatan",
                 "der",
                 "roa",
                 "icr",

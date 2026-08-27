@@ -203,7 +203,9 @@ def buat_lapisan_giro(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
 
 
 # --------------------------------------------- GOLD_GRAPH_NODES / GOLD_GRAPH_EDGES
-def buat_nodes_dan_edges(lapisan: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+def buat_nodes_dan_edges(
+    lapisan: dict[str, pd.DataFrame], afiliasi: dict[str, pd.DataFrame] | None = None
+) -> dict[str, pd.DataFrame]:
     """Satukan debitur, pihak, counterparty menjadi satu graf bertanggal."""
     peta = read_table("silver", "sl_peta_cif", columns=["cif_sk", "grup_id"])
     pihak = lapisan["dim_pihak"]
@@ -246,6 +248,24 @@ def buat_nodes_dan_edges(lapisan: dict[str, pd.DataFrame]) -> dict[str, pd.DataF
             }
         )
     )
+    # Pihak nominee untuk mekanisme afiliasi tersembunyi. Bentuknya sama persis
+    # dengan pihak ICIJ lain supaya tidak bisa dibedakan dari struktur.
+    peta_nominee: dict[int, int] = {}
+    if afiliasi and len(afiliasi.get("kepengurusan", [])):
+        id_klaster = sorted(afiliasi["kepengurusan"]["afiliasi_id"].unique())
+        mulai = int(pihak["pihak_id"].max()) + 1
+        peta_nominee = {k: mulai + i for i, k in enumerate(id_klaster)}
+        nodes.append(
+            pd.DataFrame(
+                {
+                    "node_type": TIPE_NODE_PIHAK,
+                    "ref_id": list(peta_nominee.values()),
+                    "grup_id": pd.NA,
+                    "valid_from": pd.Timestamp(settings.tanggal_default_edge),
+                }
+            )
+        )
+
     gold_nodes = pd.concat(nodes, ignore_index=True)
     gold_nodes.insert(0, "node_id", np.arange(1, len(gold_nodes) + 1))
     gold_nodes["valid_to"] = pd.NaT
@@ -334,8 +354,10 @@ def buat_nodes_dan_edges(lapisan: dict[str, pd.DataFrame]) -> dict[str, pd.DataF
 
     def node_dari(cif: pd.Series, cp: pd.Series) -> pd.Series:
         """Satu rekening milik debitur ATAU counterparty, tidak pernah keduanya."""
-        sisi_debitur = pd.to_numeric(id_node(TIPE_NODE_DEBITUR, cif.fillna(-1)), errors="coerce")
-        sisi_cp = pd.to_numeric(id_node(TIPE_NODE_COUNTERPARTY, cp.fillna(-1)), errors="coerce")
+        cif_num = pd.to_numeric(cif, errors="coerce").fillna(-1)
+        cp_num = pd.to_numeric(cp, errors="coerce").fillna(-1)
+        sisi_debitur = pd.to_numeric(id_node(TIPE_NODE_DEBITUR, cif_num), errors="coerce")
+        sisi_cp = pd.to_numeric(id_node(TIPE_NODE_COUNTERPARTY, cp_num), errors="coerce")
         return pd.Series(
             np.where(sisi_debitur.notna(), sisi_debitur, sisi_cp), index=cif.index
         )
@@ -365,6 +387,63 @@ def buat_nodes_dan_edges(lapisan: dict[str, pd.DataFrame]) -> dict[str, pd.DataF
         )
     )
 
+    # ---- afiliasi tersembunyi (langkah 7)
+    # Edge di bawah sengaja TIDAK diberi penanda: kalau ditandai, ia tidak lagi
+    # tersembunyi. Ground truth-nya ada di FACT_AFILIASI_TERSEMBUNYI.
+    if afiliasi:
+        kep = afiliasi.get("kepengurusan")
+        if kep is not None and len(kep):
+            # Nominee bersama muncul sebagai pihak yang menjabat di banyak debitur.
+            nominee_node = id_node(
+                TIPE_NODE_PIHAK, kep["afiliasi_id"].map(peta_nominee)
+            )
+            edges.append(
+                pd.DataFrame(
+                    {
+                        "src_node_id": nominee_node,
+                        "dst_node_id": id_node(TIPE_NODE_DEBITUR, kep["cif_sk"]),
+                        "rel_type": "menjabat_di",
+                        "bobot": 1.0,
+                        "berarah": True,
+                        "valid_from": kep["valid_from"],
+                        "valid_to": pd.NaT,
+                        "sumber": "icij",
+                    }
+                )
+            )
+        al = afiliasi.get("alamat")
+        if al is not None and len(al):
+            edges.append(
+                pd.DataFrame(
+                    {
+                        "src_node_id": id_node(TIPE_NODE_DEBITUR, al["cif_a"]),
+                        "dst_node_id": id_node(TIPE_NODE_DEBITUR, al["cif_b"]),
+                        "rel_type": "berbagi_atribut",
+                        "bobot": 1.0,
+                        "berarah": False,
+                        "valid_from": al["valid_from"],
+                        "valid_to": pd.NaT,
+                        "sumber": "icij",
+                    }
+                )
+            )
+        pas = afiliasi.get("pasokan")
+        if pas is not None and len(pas):
+            edges.append(
+                pd.DataFrame(
+                    {
+                        "src_node_id": id_node(TIPE_NODE_DEBITUR, pas["cif_dari"]),
+                        "dst_node_id": id_node(TIPE_NODE_DEBITUR, pas["cif_ke"]),
+                        "rel_type": "memasok",
+                        "bobot": pas["bobot"],
+                        "berarah": True,
+                        "valid_from": pas["valid_from"],
+                        "valid_to": pd.NaT,
+                        "sumber": "aml",
+                    }
+                )
+            )
+
     gold_edges = pd.concat(edges, ignore_index=True)
     gold_edges = gold_edges.dropna(subset=["src_node_id", "dst_node_id"])
     gold_edges["src_node_id"] = gold_edges["src_node_id"].astype("int64")
@@ -391,7 +470,16 @@ def build_struktur_graf() -> dict[str, int]:
     relasi = buat_pihak_dan_relasi(rng)
     giro = buat_lapisan_giro(rng)
     lapisan = {**relasi, **giro}
-    graf = buat_nodes_dan_edges(lapisan)
+
+    edge_afiliasi = None
+    if settings.injeksi_afiliasi:
+        from pipelines.generators import afiliasi as mod_afiliasi
+
+        klaster = mod_afiliasi.build_afiliasi()
+        edge_afiliasi = mod_afiliasi.edge_afiliasi(klaster, rng)
+        lapisan["fact_afiliasi_tersembunyi"] = klaster
+
+    graf = buat_nodes_dan_edges(lapisan, edge_afiliasi)
 
     peta = read_table("silver", "sl_peta_cif", columns=["cif_sk", "node_id", "grup_id"])
     map_entitas = peta.rename(columns={"node_id": "src_icij_node_id"})

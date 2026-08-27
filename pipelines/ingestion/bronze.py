@@ -149,8 +149,6 @@ def _aml_reader(usecols: list[str]):
         chunksize=settings.csv_chunksize,
         usecols=usecols,
         max_rows=settings.aml_max_rows,
-        # Header LI-Small_Trans.csv memakai nama "Account" dua kali; pandas
-        # otomatis menjadikan yang kedua "Account.1".
         dtype={"Account": "string", "Account.1": "string"},
     )
 

@@ -39,5 +39,11 @@ INSERT INTO gold.katalog_kolom_terlarang (tabel, kolom, alasan) VALUES
     ('dim_debitur', 'label_default_debitur',
      'Target. Tidak boleh ikut ke tabel fitur graf.'),
     ('fact_laporan_keuangan', 'label_default',
-     'Target PD. Dipisahkan secara fisik dari FEAT_GRAF_PIT.')
+     'Target PD. Dipisahkan secara fisik dari FEAT_GRAF_PIT.'),
+    ('fact_afiliasi_tersembunyi', 'afiliasi_id',
+     'Ground truth langkah 7. Hanya untuk mengevaluasi deteksi afiliasi tersembunyi.'),
+    ('fact_afiliasi_tersembunyi', 'peran',
+     'Ground truth langkah 7. Menyebut siapa sumber dan siapa yang tertular.'),
+    ('fact_afiliasi_tersembunyi', 'mekanisme',
+     'Ground truth langkah 7. Menyebut lewat apa afiliasi disamarkan.')
 ON CONFLICT DO NOTHING;

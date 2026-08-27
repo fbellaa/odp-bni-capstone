@@ -127,8 +127,16 @@ def build_abt_pd() -> pd.DataFrame:
     inti["split"] = _tandai_split(inti["tanggal_pengajuan"])
 
     # ---- blok fin_: laporan keuangan tahun buku terakhir sebelum pengajuan
-    lk_akhir = lk[lk["tahun_buku"] == settings.tahun_buku_terakhir].copy()
-    buang = {"lk_id", "tahun_buku", "sumber", "src_us_row_id", "src_taiwan_row_id"}
+    lk_akhir = lk[lk["is_tahun_terakhir"]].copy()
+    buang = {
+        "lk_id",
+        "tahun_buku",
+        "is_tahun_terakhir",
+        "angkatan",
+        "sumber",
+        "src_us_row_id",
+        "src_taiwan_row_id",
+    }
     buang |= KOLOM_TERLARANG
     # Kolom tw_* datang dari baris Taiwan yang dicocokkan MEMAKAI label gagal
     # bayar (langkah 2: kunci = label + kuintil DER + kuintil ROA). Jadi kolom
@@ -155,10 +163,13 @@ def build_abt_pd() -> pd.DataFrame:
 
     profil = debitur[debitur["is_current"]][
         ["cif_sk", "sektor_kbli", "kelas_penjualan", "penjualan_rp", "tahun_berdiri",
-         "rating_internal", "skor_kredit", "grup_id"]
+         "rating_internal", "skor_kredit", "grup_id", "angkatan"]
     ].copy()
-    profil["umur_perusahaan_tahun"] = settings.tahun_buku_terakhir - profil["tahun_berdiri"]
-    profil = _blok(profil, "app_", {"cif_sk", "grup_id"})
+    tahun_acuan = profil["angkatan"].map(
+        {k: v["tahun_buku_terakhir"] for k, v in settings.angkatan.items()}
+    )
+    profil["umur_perusahaan_tahun"] = tahun_acuan - profil["tahun_berdiri"]
+    profil = _blok(profil, "app_", {"cif_sk", "grup_id", "angkatan"})
 
     inti = inti.merge(produk, on="produk_id", how="left")
     inti = inti.rename(
@@ -195,6 +206,7 @@ def build_abt_pd() -> pd.DataFrame:
         "facility_id",
         "cif_sk",
         "grup_id",
+        "angkatan",
         "tanggal_pengajuan",
         "tanggal_pencairan",
         "snapshot_date",
@@ -232,8 +244,16 @@ def build_abt_pengajuan_ditolak(abt_pd: pd.DataFrame) -> pd.DataFrame:
         ~pengajuan["application_id"].isin(fasilitas["application_id"])
     ].copy()
 
-    lk_akhir = lk[lk["tahun_buku"] == settings.tahun_buku_terakhir].copy()
-    buang = {"lk_id", "tahun_buku", "sumber", "src_us_row_id", "src_taiwan_row_id"}
+    lk_akhir = lk[lk["is_tahun_terakhir"]].copy()
+    buang = {
+        "lk_id",
+        "tahun_buku",
+        "is_tahun_terakhir",
+        "angkatan",
+        "sumber",
+        "src_us_row_id",
+        "src_taiwan_row_id",
+    }
     buang |= KOLOM_TERLARANG
     buang |= {c for c in lk_akhir.columns if c.startswith("tw_")}
     lk_akhir = _blok(
@@ -242,10 +262,13 @@ def build_abt_pengajuan_ditolak(abt_pd: pd.DataFrame) -> pd.DataFrame:
 
     profil = debitur[debitur["is_current"]][
         ["cif_sk", "sektor_kbli", "kelas_penjualan", "penjualan_rp", "tahun_berdiri",
-         "rating_internal", "skor_kredit", "grup_id"]
+         "rating_internal", "skor_kredit", "grup_id", "angkatan"]
     ].copy()
-    profil["umur_perusahaan_tahun"] = settings.tahun_buku_terakhir - profil["tahun_berdiri"]
-    profil = _blok(profil, "app_", {"cif_sk", "grup_id"})
+    tahun_acuan = profil["angkatan"].map(
+        {k: v["tahun_buku_terakhir"] for k, v in settings.angkatan.items()}
+    )
+    profil["umur_perusahaan_tahun"] = tahun_acuan - profil["tahun_berdiri"]
+    profil = _blok(profil, "app_", {"cif_sk", "grup_id", "angkatan"})
 
     graf = _blok(
         feat.drop(columns=["cif_sk"]), "graf_", {"application_id", "snapshot_date"}
@@ -346,7 +369,7 @@ def build_abt_ews() -> pd.DataFrame:
     profil = debitur[debitur["is_current"]][
         ["cif_sk", "sektor_kbli", "rating_internal", "skor_kredit", "grup_id"]
     ]
-    profil = _blok(profil, "app_", {"cif_sk", "grup_id"})
+    profil = _blok(profil, "app_", {"cif_sk", "grup_id", "angkatan"})
     panel = panel.merge(profil, on="cif_sk", how="left")
 
     panel = panel.merge(
@@ -369,16 +392,23 @@ def build_abt_ews() -> pd.DataFrame:
 
 
 # -------------------------------------------------------------------- ABT LGD
-FITUR_LGD_BERSINYAL = {
-    "app_produk_id",
+# Ruang fitur model LGD - SATU sumber kebenaran untuk data latih dan data
+# terapan. Aturannya: model tidak boleh belajar dari fitur yang tidak akan ada
+# saat ia dipanggil. Kolom SBA seperti nilai pencairan USD, jumlah pegawai, dan
+# negara bagian Amerika memang tidak punya padanan di portofolio sintetis, jadi
+# dikeluarkan dari data latih - bukan dipaksakan ada di data terapan.
+FITUR_LGD_TERAPAN = [
+    "app_tenor_bulan",
     "app_jenis_fasilitas",
-    "app_sektor_kbli_sba",
-    "app_tenor_bulan_sba",
-    "app_porsi_penjaminan",
+    "app_revolving",
+    "app_sektor_kbli",
     "app_skala_pegawai",
-    "app_dokumen_ringkas",
     "app_perusahaan_baru",
-}
+    "app_dokumen_ringkas",
+    "app_porsi_penjaminan",
+]
+
+FITUR_LGD_BERSINYAL = {*FITUR_LGD_TERAPAN, "app_produk_id"}
 
 
 def build_abt_lgd() -> pd.DataFrame:
@@ -421,15 +451,17 @@ def build_abt_lgd() -> pd.DataFrame:
         ]
     ].rename(
         columns={
-            "Term": "app_tenor_bulan_sba",
+            "Term": "app_tenor_bulan",
             "porsi_penjaminan": "app_porsi_penjaminan",
             "skala_pegawai": "app_skala_pegawai",
             "dokumen_ringkas": "app_dokumen_ringkas",
             "perusahaan_baru": "app_perusahaan_baru",
             "jenis_fasilitas": "app_jenis_fasilitas",
-            "kbli_kategori": "app_sektor_kbli_sba",
+            # kbli_kategori sudah dibawa dim_debitur sebagai app_sektor_kbli
+            # dengan nilai yang identik, jadi tidak diduplikasi di sini.
         }
     )
+    sba["app_revolving"] = sba["app_jenis_fasilitas"].eq("modal_kerja")
 
     abt = (
         default.merge(
@@ -484,22 +516,23 @@ def build_abt_lgd_sumber() -> pd.DataFrame:
     sba = read_table("silver", "sl_sba")
     lgd = sba[(sba["is_default"] == 1) & sba["lgd_realisasi"].notna()].copy()
 
+    # HANYA fitur yang juga tersedia di abt_lgd. Menambah kolom di sini akan
+    # menghasilkan model yang tidak bisa dipanggil pada portofolio - dijaga
+    # test_ruang_fitur_lgd_sejajar dan gerbang kualitas.
     fitur = {
         "Term": "app_tenor_bulan",
         "jenis_fasilitas": "app_jenis_fasilitas",
         "revolving": "app_revolving",
         "kbli_kategori": "app_sektor_kbli",
         "skala_pegawai": "app_skala_pegawai",
-        "NoEmp": "app_jumlah_pegawai",
         "perusahaan_baru": "app_perusahaan_baru",
         "dokumen_ringkas": "app_dokumen_ringkas",
         "porsi_penjaminan": "app_porsi_penjaminan",
-        "DisbursementGross": "app_pencairan_usd",
-        "GrAppv": "app_plafon_disetujui_usd",
-        "State": "app_wilayah",
-        "UrbanRural": "app_urban_rural",
     }
     fitur = {k: v for k, v in fitur.items() if k in lgd.columns}
+    hilang = set(FITUR_LGD_TERAPAN) - set(fitur.values())
+    if hilang:
+        raise ValueError(f"fitur LGD tidak tersedia di sl_sba: {sorted(hilang)}")
     out = lgd[["sba_loan_nr", "ApprovalFY", *fitur]].rename(columns=fitur)
     out["y_lgd_realisasi"] = lgd["lgd_realisasi"].to_numpy()
 
@@ -516,6 +549,27 @@ def build_abt_lgd_sumber() -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ penjagaan
+def _pastikan_ruang_fitur_lgd_sejajar(
+    abt_lgd: pd.DataFrame, abt_lgd_sumber: pd.DataFrame
+) -> None:
+    """Model dilatih di satu tabel dan dipanggil di tabel lain - kolomnya wajib sama.
+
+    Tanpa penjagaan ini, ketidakcocokan baru ketahuan saat data scientist
+    memanggil predict() dan mendapat KeyError.
+    """
+    latih = {c for c in abt_lgd_sumber.columns if c.startswith("app_")}
+    terap = {c for c in abt_lgd.columns if c.startswith("app_")}
+    hanya_latih = sorted(latih - terap)
+    if hanya_latih:
+        raise AssertionError(
+            "abt_lgd_sumber memuat fitur yang tidak ada di abt_lgd, sehingga "
+            f"model tidak bisa diterapkan: {hanya_latih}"
+        )
+    kurang = sorted(set(FITUR_LGD_TERAPAN) - terap)
+    if kurang:
+        raise AssertionError(f"abt_lgd kehilangan fitur terapan: {kurang}")
+
+
 def _pastikan_bersih(df: pd.DataFrame, nama: str) -> None:
     """Gagal keras kalau ada kolom terlarang lolos ke ABT."""
     bocor = sorted(set(df.columns) & KOLOM_TERLARANG)
@@ -525,17 +579,62 @@ def _pastikan_bersih(df: pd.DataFrame, nama: str) -> None:
 
 
 # -------------------------------------------------------------- kamus & paket
+# NaN pada kolom ini BUKAN data hilang, melainkan keadaan yang punya arti.
+# EBITDA nol atau negatif membuat rasionya tak terdefinisi - dan debitur seperti
+# itu tiga kali lebih sering gagal bayar (6,3% vs 2,1%). Mengimputasi median
+# menghapus sinyalnya sekaligus memberi mereka angka yang tampak sehat.
+KOLOM_KOSONG_BERMAKNA = {
+    "fin_debt_to_ebitda",
+    "fin_debt_to_ebitda_yoy",
+    "fin_debt_to_ebitda_delta_3thn",
+    "fin_cfo_to_ebitda",
+}
+
+# NaN pada kolom ini berarti "tidak ada relasi", bukan "tidak diketahui".
+# fillna(0) benar secara semantik; fillna(median) salah.
+KOLOM_KOSONG_BERARTI_NOL = {
+    "graf_supplier_concentration_hhi",
+    "graf_buyer_concentration_hhi",
+    "graf_neighbor_default_rate_1hop",
+    "graf_community_default_rate",
+    "graf_group_exposure_share",
+}
+
+
 def _catatan_kolom(nama_abt: str, kolom: str, kategori: str) -> str:
-    """Tandai kolom yang gampang disalahtafsirkan saat membaca importance."""
+    """Tandai kolom yang gampang disalahtafsirkan saat dipakai memodelkan."""
+    catatan: list[str] = []
+
     if nama_abt == "abt_lgd" and kategori in ("app", "fin"):
-        if kolom in FITUR_LGD_BERSINYAL:
-            return "sinyal nyata - dari baris SBA yang sama dengan target"
-        return "DERAU terhadap LGD - disintesis terpisah dari target"
+        catatan.append(
+            "sinyal nyata - dari baris SBA yang sama dengan target"
+            if kolom in FITUR_LGD_BERSINYAL
+            else "DERAU terhadap LGD - disintesis terpisah dari target"
+        )
     if kolom in ("app_keputusan", "app_pricing_bps", "app_komite_level"):
-        return "hasil keputusan, bukan input - drop bila model untuk mendukung keputusan"
-    if kategori == "graf":
-        return "blok ablasi - drop sekaligus untuk model baseline"
-    return ""
+        catatan.append(
+            "hasil keputusan, bukan input - drop bila model untuk mendukung keputusan"
+        )
+    if kategori == "graf" and not catatan:
+        catatan.append("blok ablasi - drop sekaligus untuk model baseline")
+
+    # ---- perlakuan NaN
+    if kolom in KOLOM_KOSONG_BERMAKNA:
+        catatan.append(
+            "NaN BERMAKNA (EBITDA <= 0, bad rate 3x lipat) - "
+            "tambahkan indikator kosong, JANGAN fillna(median) polos"
+        )
+    elif kolom in KOLOM_KOSONG_BERARTI_NOL:
+        catatan.append("NaN berarti 'tidak ada relasi' - fillna(0), bukan median")
+    elif kolom == "y_umur_hari":
+        catatan.append(
+            "hanya terisi bila benar-benar gagal bayar - "
+            "untuk model survival pakai y_umur_teramati_hari"
+        )
+    elif kolom.startswith("y_default"):
+        catatan.append("NaN = tersensor kanan - buang, JANGAN diisi 0")
+
+    return " | ".join(catatan)
 
 
 def _kamus(abt: pd.DataFrame, nama_abt: str) -> pd.DataFrame:
@@ -582,6 +681,8 @@ def build_abt() -> dict[str, int]:
         "abt_lgd_sumber": abt_lgd_sumber,
         "abt_pengajuan_ditolak": ditolak,
     }
+    _pastikan_ruang_fitur_lgd_sejajar(abt_lgd, abt_lgd_sumber)
+
     for nama, df in tabel.items():
         write_table(df, "gold", nama)
 

@@ -44,10 +44,12 @@ data/gold/  -> (opsional) Postgres skema `gold`
 | `transform/silver.py` | Penurunan DER / ICR / debt-to-EBITDA / siklus modal kerja. |
 | `transform/joins.py` | Langkah 1-5 rencana data (penjahitan CIF). |
 | `generators/sintesis.py` | Langkah 6: konteks Indonesia, agunan, covenant, kolektibilitas. |
+| `generators/afiliasi.py` | Langkah 7: injeksi afiliasi tersembunyi + ground truth. |
 | `graph/struktur.py` | `GOLD_GRAPH_NODES`, `GOLD_GRAPH_EDGES`, relasi ICIJ, transfer giro. |
 | `graph/fitur_pit.py` | `GRAPH_SNAPSHOT_BULANAN`, `FEAT_GRAF_PIT`. |
 | `exports/abt.py` | Analytic Base Table PD / EWS / LGD + kamus data. |
-| `quality/checks.py` | 61 uji, termasuk tiga lapis uji kebocoran waktu. |
+| `parameter.py` | Catat parameter efektif build ke `gold.parameter_build`. |
+| `quality/checks.py` | 69 uji, termasuk tiga lapis uji kebocoran waktu. |
 | `loaders/postgres.py` | Materialisasi parquet gold ke skema `gold`. |
 | `flows/` | Flow Prefect per layer + `main_flow`. |
 
@@ -77,6 +79,11 @@ python -m pipelines.flows.main_flow
 Kira-kira 20-30 menit pada laptop; sebagian besar untuk membaca
 `LI-Small_Trans.csv` (650 MB, dua lintasan). Layer bronze dilewati otomatis bila
 parquet-nya sudah ada.
+
+> **`PREFECT_API_URL` harus KOSONG untuk mode ini.** Kalau variabel itu terpasang
+> (mis. dari `.env`) sementara server Prefect tidak hidup, pipeline gagal sebelum
+> mulai dengan `RuntimeError: Failed to reach API`. Prefect butuh nilai itu hanya
+> pada mode server di bawah.
 
 ### Mode cepat untuk uji coba
 
@@ -120,7 +127,7 @@ Lalu picu run dari terminal mana pun:
 
 ```bash
 python -m prefect deployment run 'data-quality-gate/gerbang-kualitas'
-python -m prefect deployment run 'banking-copilot-data-pipeline/harian'
+python -m prefect deployment run 'banking-copilot-data-pipeline/bangun-penuh'
 ```
 
 > **Windows.** Beberapa perintah CLI Prefect mencetak karakter Unicode dan
@@ -140,10 +147,20 @@ Jadwal yang sudah didefinisikan di `prefect.yaml`:
 
 | Deployment | Jadwal | Guna |
 |---|---|---|
-| `harian` | 02:00 WIB tiap hari | pipeline penuh |
-| `gerbang-kualitas` | tiap jam, 08:00-17:00 hari kerja | uji anti-bocor berulang |
+| `bangun-penuh` | **manual** | pipeline penuh, dipicu saat kode/parameter berubah |
+| `gerbang-kualitas` | Senin 07:00 WIB | kenari lingkungan (upgrade pustaka, berkas rusak) |
 | `refresh-gold` | manual | bangun ulang gold tanpa baca CSV besar |
 | `bronze-refresh` | manual | baca ulang seluruh CSV mentah |
+
+**Kenapa tidak ada jadwal harian?** Sumbernya sepuluh CSV statis dan generatornya
+berseed tunggal, jadi menjalankan ulang menghasilkan byte yang persis sama.
+Menjadwalkannya tiap hari hanya membakar waktu komputasi untuk menghasilkan
+berkas identik. Pemicu yang benar untuk pipeline ini adalah **perubahan kode**,
+dan itu ditangani CI, bukan cron.
+
+Kalau nanti ada sumber yang benar-benar bertambah (mutasi giro harian, pengajuan
+baru), barulah jadwal harian masuk akal - dan saat itu `bronze_flow` perlu diubah
+dari muat-ulang-penuh menjadi inkremental.
 
 ### Memuat ke Postgres
 
@@ -160,9 +177,14 @@ python -m pipelines.loaders.postgres
 
 | Variabel | Default | Arti |
 |---|---|---|
-| `N_DEBITUR` | `3000` | Jumlah CIF sintetis (3.000 x 3 tahun = 9.000 firm-year). |
+| `N_DEBITUR` | `6000` | Jumlah CIF sintetis (6.000 x 3 tahun = 18.000 firm-year). |
 | `PANEL_YEARS` | `3` | Panjang panel laporan keuangan. |
 | `PIPELINE_SEED` | `42` | Seed tunggal untuk seluruh sintesis - hasilnya reproducible. |
+
+> **Awas `.env`.** `config.py` memanggil `load_dotenv()`, jadi `.env` MENIMPA
+> nilai default di tabel ini. Berkas itu tidak masuk git. Parameter efektif
+> tiap build tercatat di `gold.parameter_build`, kolom `sumber` - periksa ke
+> sana lebih dulu kalau hasil bangun berbeda dari yang diharapkan.
 | `SAMPLE_MODE` | `0` | `1` membatasi baris yang dibaca dari SBA dan AML. |
 | `AML_MAX_ROWS` | - | Batas baris AML secara eksplisit. |
 | `LOAD_TO_POSTGRES` | `0` | `1` memuat gold ke Postgres di akhir flow. |
@@ -197,16 +219,21 @@ Flow gold menghasilkan tiga Analytic Base Table siap model:
 
 | Berkas | Grain | Baris | Target |
 |---|---|---|---|
-| `data/gold/abt_pd.parquet` | `application_id` | 2.192 | `y_default_12bln` |
-| `data/gold/abt_ews.parquet` | `facility_id` x `snapshot_date` | 38.092 | `y_default_6bln` |
-| `data/gold/abt_lgd.parquet` | `facility_id` yang default | 75 | `y_lgd_realisasi` |
+| `data/gold/abt_pd.parquet` | `application_id` | 4,398 | `y_default_12bln` |
+| `data/gold/abt_ews.parquet` | `facility_id` x `snapshot_date` | 126,127 | `y_default_6bln` |
+| `data/gold/abt_lgd.parquet` | `facility_id` yang default | 215 | `y_lgd_realisasi` |
 
 Setiap kolom fitur berprefiks `fin_`, `app_`, `perilaku_`, atau `graf_`, sehingga
 uji ablasi §7.3 cukup `X.drop(columns=X.filter(like="graf_").columns)`.
 
-Panduan lengkapnya - termasuk arti `y = NaN` (tersensor kanan) dan kolom yang
-sebaiknya di-drop - ada di
+Panduan lengkapnya - termasuk arti `y = NaN` (tersensor kanan), perlakuan NaN
+per kolom, dan kolom yang sebaiknya di-drop - ada di
 [docs/serah-terima-data-scientist.md](../docs/serah-terima-data-scientist.md).
+
+Untuk tim yang membangun dashboard dan laporan portofolio (bukan model), ada
+[docs/panduan-business-analyst.md](../docs/panduan-business-analyst.md) - berisi
+peta tabel ke pertanyaan bisnis, lima jebakan agregasi, resep SQL siap pakai,
+dan daftar anomali sintetis yang tidak boleh dijadikan temuan.
 
 ---
 
@@ -219,8 +246,9 @@ sebaiknya di-drop - ada di
 - `node2vec_emb[0..15]` pada ERD B diisi embedding SVD dari adjacency
   (`node_emb_00..15`), bukan node2vec sungguhan - deterministik dan tanpa
   dependensi tambahan. Statusnya varian, bukan fitur utama.
-- Injeksi kekotoran data & afiliasi tersembunyi (langkah 7) belum masuk; sesuai
-  proposal §4 spesifikasinya harus dipisah dari kode deteksi, jadi menunggu
-  dokumen spesifikasi tersendiri.
+- Injeksi **kekotoran data** (langkah 7b) belum masuk. Injeksi **afiliasi
+  tersembunyi** sudah ada di `generators/afiliasi.py`, terpisah dari kode
+  deteksi sesuai proposal §4 - tapi lift AUC-nya belum terukur secara
+  statistik (selang kepercayaan mencakup nol pada 14 kejadian uji).
 - Narasi RM dan korpus kebijakan kredit (LLM-generated) di luar cakupan pipeline
   ini.
