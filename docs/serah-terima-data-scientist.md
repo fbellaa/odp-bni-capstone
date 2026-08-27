@@ -2,6 +2,27 @@
 
 Dokumen ini yang dibaca duluan sebelum menyentuh datanya.
 
+> **PERUBAHAN BLOK `graf_` — build 27 Agustus 2026.**
+> Alamat kini menjadi entitas tersendiri (`DIM_ALAMAT`) dan ikut sebagai simpul
+> di `GOLD_GRAPH_NODES` (+1.561 simpul, +5.318 edge `beralamat_di`). Grafnya
+> berubah, jadi metrik yang dihitung di atasnya ikut bergeser.
+>
+> Yang berubah: **24 kolom, seluruhnya berprefiks `graf_`** — `degree`,
+> `weighted_degree`, `pagerank`, `betweenness`, `community_id`,
+> `community_default_rate`, `shared_attribute_degree`,
+> `neighbor_default_rate_1hop`, dan `node_emb_00..15`.
+>
+> Yang **utuh**: seluruh blok `fin_*` dan `app_*`, semua target (`y_*`, bad rate
+> `abt_pd` tetap 3,195%), grain dan jumlah baris, `abt_ews` dan `abt_lgd`
+> sepenuhnya, serta empat kolom graf yang murni dari relasi `memasok`:
+> `supplier_concentration_hhi`, `buyer_concentration_hhi`,
+> `circular_payment_flag`, `group_exposure_share`.
+>
+> Ini **bukan** kebocoran — `beralamat_di` membawa `valid_from`/`valid_to` dan
+> lewat filter titik-waktu yang sama di `fitur_pit.py`. Tapi **hasil model yang
+> dilatih pada blok `graf_` versi lama tidak sebanding dengan yang baru dan
+> perlu dihitung ulang.**
+
 ---
 
 ## 0. Baca ini dulu

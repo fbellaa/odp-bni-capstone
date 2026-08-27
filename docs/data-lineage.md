@@ -37,6 +37,8 @@ Yang sintesis: **keterkaitan antar sumber**, dan seluruh konteks Indonesia.
 | Agunan, covenant, kolektibilitas bulanan | aturan distribusi | SINTESIS |
 | `grup_id` | klaster hub ICIJ | SINTESIS (turunan) |
 | Nama pihak (`DIM_PIHAK.nama`) | Faker | SINTESIS - nama asli ICIJ **tidak** dibawa |
+| Struktur berbagi alamat (siapa sekantor dengan siapa) | ICIJ Offshore Leaks | **NYATA** |
+| Teks alamat (`DIM_ALAMAT.alamat_teks`) | Faker | SINTESIS - alamat asli ICIJ **tidak** dibawa |
 | Join antar seluruh dataset | pemetaan `cif` | **SINTESIS - wajib didokumentasikan** |
 
 ---
@@ -214,6 +216,24 @@ menelan seluruh populasi).
 Hasilnya: 6.000 debitur dalam **1,390 grup usaha**.
 Konsekuensi: distribusi derajat tidak persis sama dengan populasi ICIJ penuh -
 tersaring ke entitas yang punya minimal satu relasi pengurus.
+
+### Catatan alamat (kenapa teksnya disintesis padahal strukturnya nyata)
+
+`DIM_ALAMAT` memisahkan dua hal yang mudah tertukar:
+
+- **Siapa sekantor dengan siapa** - diambil apa adanya dari ICIJ. Inilah sinyal
+  yang dipakai untuk menemukan afiliasi lintas grup, dan ia nyata.
+- **Teks alamatnya** - disintesis Faker. Alamat di berkas ICIJ adalah data nyata
+  dari dokumen bocoran, dan proyek ini sudah menolak membawa nama asli ICIJ ke
+  gold; alamat tunduk pada aturan yang sama. Alasan kedua: debitur di sini badan
+  hukum Indonesia sintetis, dan alamat asli ICIJ membuat mereka berkantor di
+  Sliema dan Tortola.
+
+Penyamaran dikunci pada bentuk **ternormalisasi alamat aslinya**, jadi dua
+entitas yang berbagi satu alamat di ICIJ tetap berbagi satu alamat sesudah
+disamarkan. Uji `test_struktur_berbagi_alamat_bertahan_setelah_disamarkan`
+menjaganya, dan `test_alamat_asli_icij_tidak_ikut_ke_gold` menjaga sisi
+sebaliknya.
 
 ---
 
