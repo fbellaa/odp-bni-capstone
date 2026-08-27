@@ -180,7 +180,7 @@ LUAR klaster tidak tersisa siapa-siapa:
 | terinfeksi | 133 | 0,466 |
 
 Keanggotaan klaster praktis menjadi label itu sendiri, dan model mengerjakan
-soal yang salah. Ablasi memburuk: 0,733 menjadi 0,693.
+soal yang salah.
 
 Perbaikannya `afiliasi_porsi_default_terpakai = 0,40` - klaster hanya boleh
 memakai 40% tiap kolam. Jumlah klaster turun ke 45, bad rate non-anggota kembali

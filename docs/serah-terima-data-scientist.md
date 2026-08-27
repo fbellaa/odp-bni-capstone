@@ -239,32 +239,54 @@ ukur ulang pada populasi `angkatan == "buku_baru"`:
 
 | Model | AUC latih | AUC uji OOT |
 |---|---|---|
-| baseline (`fin_` + `app_`) | 0,881 | 0,733 |
-| baseline + blok graf | 0,899 | **0,754** |
-| penularan masa lalu saja (2 kolom) | 0,581 | 0,490 |
-| topologi tanpa penularan | 0,669 | 0,617 |
+| baseline (`fin_` + `app_`) | 0,881 | **0,733** |
+| baseline + blok graf | 0,903 | 0,710 |
 
-**Selisihnya +0,021, dan selang kepercayaan 95% bootstrap-nya [-0,027, +0,071] -
-mencakup nol.** Dengan 14 kejadian gagal bayar di uji out-of-time, lift ini
-**tidak terukur secara statistik**. Jangan laporkan "fitur graf meningkatkan
-AUC" berdasarkan angka ini.
+**Blok graf masih menurunkan AUC out-of-time (−0,024; selang kepercayaan 95%
+bootstrap [−0,080, +0,037]).** Naik di data latih (+0,022), turun di data uji —
+pola khas overfitting. Selangnya mencakup nol, jadi yang bisa dikatakan hanya
+**belum terbukti membantu**, bukan terbukti merugikan.
 
-Yang terukur adalah perbedaan risikonya, bukan AUC-nya:
+Sebabnya bukan kualitas fiturnya, melainkan **kejadian yang terlalu sedikit**:
+
+```
+kejadian gagal bayar di data latih : 53
+fitur baseline                     : 45   -> 1,18 kejadian per variabel
+fitur + blok graf                  : 73   -> 0,73 kejadian per variabel
+kaidah umum pemodelan risiko       : >= 10 kejadian per variabel
+```
+
+Kita **sepuluh kali lipat di bawah** ambang yang layak. Pada rasio seperti ini,
+menambah 28 kolom hampir pasti memperburuk generalisasi, terlepas dari isi
+kolomnya.
+
+Regularisasi memperkecil kerugiannya tapi tidak membalikkannya:
+
+| Penalti (`C`) | baseline | + graf | selisih |
+|---|---|---|---|
+| 0,001 (kuat) | 0,727 | 0,723 | −0,004 |
+| 0,01 | 0,729 | 0,722 | −0,006 |
+| 0,1 | 0,736 | 0,718 | −0,018 |
+| 1,0 (default) | 0,733 | 0,710 | −0,024 |
+
+Semakin kuat penaltinya, semakin kecil kerugiannya — persis yang diharapkan
+kalau kolom tambahan itu derau. Kalau blok graf membawa sinyal nyata, penalti
+lemah justru akan menguntungkannya.
+
+Yang tetap terukur adalah perbedaan risikonya:
 
 | | n | bad rate |
 |---|---|---|
 | `graf_neighbor_default_rate_1hop > 0` | 204 | **6,4%** |
 | `= 0` | 1.872 | 2,9% |
 
-Selisih 2,2x, dan arahnya benar. Untuk mengubahnya menjadi lift AUC yang bisa
-dipertanggungjawabkan, yang dibutuhkan adalah lebih banyak kejadian di jendela
-uji - bukan parameter injeksi yang dinaikkan sampai grafiknya bagus.
+Selisih 2,2x dengan arah yang benar. Mekanisme penularannya bekerja; yang belum
+cukup adalah jumlah kejadian untuk mengubahnya jadi lift AUC.
 
-Blok `fin_tw_*` (rasio Taiwan) **sudah dibuang** dari ABT. Empat kolom itu
-menghasilkan AUC out-of-time 0,826 — lebih tinggi dari 29 kolom rasio nyata —
-karena baris Taiwan-nya dicocokkan **memakai label gagal bayar** (langkah 2:
-kunci = label + kuintil DER + kuintil ROA). Itu kebocoran lewat kunci
-pencocokan, bukan sinyal keuangan.
+**Kesimpulan yang layak dilaporkan:** pada data ini blok graf belum terbukti
+menambah daya prediksi, dan penyebab utamanya jumlah kejadian — bukan bukti
+bahwa fitur graf tidak berguna. Untuk mengujinya dengan layak dibutuhkan
+populasi jauh lebih besar atau jendela observasi lebih panjang.
 
 ### `abt_ews` — siap untuk populasi kol 1–2 saja
 
@@ -298,20 +320,81 @@ bernilai NA — itu keadaan sebenarnya, bukan data hilang.
 
 ### `abt_lgd` — untuk menerapkan, bukan melatih
 
-Lihat §1 dan kolom `catatan` di kamus data. Latih di `abt_lgd_sumber`
-(156.824 pinjaman SBA nyata, split OOT berbasis `ApprovalFY`), lalu terapkan
-hasilnya ke `abt_lgd` untuk menghitung `PD x LGD x EAD`.
+Tiga peran yang mudah tertukar:
 
-Di `abt_lgd`, hanya kolom yang berasal dari baris SBA yang sama dengan target
-yang punya hubungan nyata dengan LGD (`app_produk_id`, `app_jenis_fasilitas`,
-`app_tenor_bulan_sba`, `app_porsi_penjaminan`, `app_skala_pegawai`,
-`app_dokumen_ringkas`, `app_perusahaan_baru`, `app_sektor_kbli_sba`). Sisanya —
-termasuk `app_coverage_ratio` — derau. Kamus data menandai keduanya secara
-eksplisit di kolom `catatan`.
+| Peran | Tabel | Baris |
+|---|---|---|
+| **Latih** | `abt_lgd_sumber` split `latih` | 132.921 |
+| **Uji** (mengukur performa) | `abt_lgd_sumber` split `uji_oot` | 23.903 |
+| **Terapkan** (skoring portofolio) | `abt_lgd` | 215 |
+
+Latih dan uji memakai populasi yang sama (pinjaman SBA nyata), dibelah menurut
+`ApprovalFY`. `abt_lgd` adalah populasi berbeda — portofolio sintetis kita — dan
+di sana model **dipakai**, bukan dinilai.
+
+```python
+from pipelines.exports.abt import FITUR_LGD_TERAPAN
+
+model.fit(sumber_latih[FITUR_LGD_TERAPAN], sumber_latih.y_lgd_realisasi)
+skor(model, sumber_uji)                                     # dinilai di sini
+abt_lgd["lgd_prediksi"] = model.predict(abt_lgd[FITUR_LGD_TERAPAN])
+abt_lgd["expected_loss_rp"] = abt_lgd.lgd_prediksi * abt_lgd.app_ead_rp
+```
+
+**Pakai `FITUR_LGD_TERAPAN`, jangan menyusun daftar fitur sendiri.** Delapan
+kolom itu satu-satunya yang tersedia di kedua tabel:
+
+```
+app_tenor_bulan · app_jenis_fasilitas · app_revolving · app_sektor_kbli
+app_skala_pegawai · app_perusahaan_baru · app_dokumen_ringkas · app_porsi_penjaminan
+```
+
+Kolom SBA lain (nilai pencairan USD, jumlah pegawai, negara bagian Amerika)
+sengaja **dikeluarkan dari data latih** karena tidak punya padanan di portofolio.
+Model tidak boleh belajar dari fitur yang tidak akan ada saat ia dipanggil.
+`test_ruang_fitur_lgd_sejajar` dan gerbang kualitas menjaganya.
+
+Hasil acuan (Ridge sederhana, seluruh data latih):
+
+| | MAE |
+|---|---|
+| model di `sumber` uji_oot | 0,195 |
+| baseline rata-rata | 0,220 |
+
+Perbaikannya 11% terhadap baseline — modest, dan itu wajar untuk LGD.
+
+`abt_lgd` memang punya `y_lgd_realisasi` asli, jadi bisa dipakai *sanity check*
+sekunder. Tapi bukan pengujian yang layak dilaporkan: 215 baris, dan sebagian
+besar kolom lainnya derau terhadap target — lihat kolom `catatan` di kamus data,
+yang menandai tiap kolom sebagai sinyal atau derau.
 
 ---
 
-## 8. Batasan yang perlu dilaporkan bersama hasil
+## 7b. Memastikan Anda memakai build yang sama
+
+`gold.parameter_build` mencatat parameter efektif yang menghasilkan tiap build.
+**Periksa tabel ini sebelum membandingkan hasil dengan siapa pun.**
+
+```python
+par = pd.read_parquet("data/gold/parameter_build.parquet")
+par[par.parameter.isin(["n_debitur", "seed", "porsi_buku_lama", "git_commit"])]
+```
+
+Kolom `sumber` adalah yang terpenting: `default_kode` berarti nilainya dari
+`config.py`, `env:NAMA` berarti **ditimpa berkas `.env`**. Berkas itu tidak masuk
+git, jadi dua orang dengan kode identik bisa menghasilkan data berbeda.
+
+Ini bukan kekhawatiran teoretis. Sepanjang pembangunan proyek, `.env` yang
+tertinggal memuat `N_DEBITUR=3000` sementara kode sudah di 6000 — populasi
+separuhnya, kejadian di uji out-of-time turun dari 14 ke 3, dan seluruh angka
+ablasi bergeser. Gejalanya menyamar sebagai pipeline yang tidak deterministik.
+
+Pipeline-nya sendiri **reproducible**: membangun seluruh gold dua kali di dua
+proses terpisah menghasilkan 29 dari 29 tabel identik byte per byte.
+
+---
+
+## 8. Batasan yang perlu dilaporkan bersama hasil## 8. Batasan yang perlu dilaporkan bersama hasil
 
 1. **LGD portofolio hanya 215 observasi**, dan hanya sebagian fiturnya bersinyal.
    Model LGD dilatih di `abt_lgd_sumber` (156.824 pinjaman SBA nyata), bukan di
