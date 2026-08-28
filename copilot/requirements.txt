@@ -1,0 +1,15 @@
+# Lapisan copilot: LLM lokal, pembacaan dokumen, RAG, agen.
+#
+# Sengaja tipis. Tidak ada torch, transformers, FAISS, atau LangChain:
+# inferensi dikerjakan Ollama di luar proses Python, dan pencarian vektor atas
+# korpus seukuran ini selesai dengan satu perkalian matriks NumPy. Setiap
+# dependensi berat berarti satu kemungkinan gagal pasang di sesi Kaggle yang
+# waktunya terbatas.
+
+requests>=2.31
+pydantic>=2.6
+pypdf>=4.2
+numpy>=1.26
+pandas>=2.2
+pyarrow>=15.0
+python-dotenv>=1.0
