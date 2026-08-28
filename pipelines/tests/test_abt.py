@@ -176,6 +176,24 @@ def test_tabel_ditolak_seruang_fitur_dengan_abt_pd(abt_pd):
     assert "y_default_12bln" not in ditolak.columns
 
 
+@pytest.mark.parametrize("nama", ["abt_pd", "abt_pengajuan_ditolak"])
+def test_neraca_sepadan_dengan_penjualan(nama):
+    """Tidak ada baris beraset puluhan kali omzetnya.
+
+    Bukan sekadar soal angka jelek: rasio yang dipakai model dihitung langsung
+    dari kolom level ini, jadi baris seperti itu menyuntik profil distress
+    ekstrem ke seluruh blok fin_ tanpa outcome yang mengikutinya.
+    """
+    df = read_table("gold", nama)
+    penjualan = df["fin_penjualan_rp"]
+    rasio = df["fin_total_aset_rp"] / penjualan.where(penjualan > 0)
+    tak_wajar = rasio > settings.aset_thd_penjualan_maks
+    assert not tak_wajar.any(), (
+        f"{nama}: {int(tak_wajar.sum())} baris beraset > "
+        f"{settings.aset_thd_penjualan_maks}x penjualan (maks {rasio.max():.1f}x)"
+    )
+
+
 def test_abt_lgd_sumber_populasi_nyata():
     """Data latih LGD harus populasi SBA penuh, bukan 75 baris sintetis."""
     sumber = read_table("gold", "abt_lgd_sumber")
@@ -183,6 +201,69 @@ def test_abt_lgd_sumber_populasi_nyata():
     assert sumber["y_lgd_realisasi"].between(0, 1).all()
     assert set(sumber["split"]) == {"latih", "uji_oot"}
     assert sumber["y_lgd_realisasi"].std() > 0.1
+
+
+def test_lgd_bergerak_mengikuti_agunan():
+    """LGD harus sensitif terhadap agunan - tapi bukan tulisan ulang coverage.
+
+    Dulu korelasinya -0,05: model LGD tidak bisa menjawab "berapa kerugian
+    kalau coverage dinaikkan", padahal itu pertanyaan bisnis yang paling
+    sering datang. Batas bawah -0,70 menjaga agar perbaikannya tidak berlebihan
+    sampai LGD jadi fungsi deterministik agunan.
+    """
+    lgd = read_table("gold", "abt_lgd")
+    cov_ead = lgd["app_coverage_ratio"] / lgd["app_ead_thd_plafon"]
+    korelasi = lgd["y_lgd_realisasi"].corr(cov_ead)
+    assert -0.70 <= korelasi <= -0.20, (
+        f"corr(LGD, coverage terhadap EAD) = {korelasi:+.3f}, di luar [-0,70; -0,20]"
+    )
+
+
+def test_fitur_sba_masih_memprediksi_lgd_di_portofolio():
+    """Pemetaan peringkat tidak boleh memutus transfer SBA -> portofolio.
+
+    Ini penjaga terhadap kesalahan yang pernah terjadi: membentuk urutan LGD
+    dari agunan SAJA mengacak urutan SBA sampai model yang dilatih di 156.610
+    pinjaman SBA jatuh ke R2 -0,43 saat diterapkan ke portofolio - lebih buruk
+    daripada menebak rata-rata. Data latih LGD tidak punya kolom agunan, jadi
+    kalau korelasi ini hilang, tabel penerapan menjadi tidak bisa diskor sama
+    sekali oleh model yang bisa dilatih.
+
+    Yang diuji versi murahnya: peringkat LGD portofolio harus masih berkorelasi
+    dengan peringkat LGD SBA asalnya, tanpa perlu melatih model apa pun.
+    """
+    lgd = read_table("gold", "abt_lgd")
+    sba = read_table("silver", "sl_peta_sba", columns=["src_sba_loannr", "lgd_realisasi"])
+    gabung = lgd.merge(
+        sba.rename(columns={"lgd_realisasi": "lgd_sba"}), on="src_sba_loannr", how="inner"
+    )
+    korelasi = gabung["y_lgd_realisasi"].corr(gabung["lgd_sba"], method="spearman")
+    assert korelasi > 0.35, (
+        f"korelasi peringkat LGD portofolio vs SBA = {korelasi:+.3f}; "
+        "di bawah ini fitur SBA tidak lagi bisa memprediksi LGD portofolio"
+    )
+
+
+def test_lgd_marginal_tidak_bergeser_dari_sba():
+    """Agunan menentukan URUTAN, SBA tetap menentukan sebaran nilainya."""
+    default = read_table("gold", "fact_default")
+    sba = read_table("silver", "sl_peta_sba", columns=["cif_sk", "lgd_realisasi"])
+    sumber = sba[sba["cif_sk"].isin(default["cif_sk"])]["lgd_realisasi"].mean()
+    assert abs(default["lgd_realisasi"].mean() - sumber) < 0.02, (
+        f"rerata LGD {default['lgd_realisasi'].mean():.4f} vs sumber SBA {sumber:.4f}"
+    )
+
+
+def test_abt_lgd_tanpa_kolom_split():
+    """Seluruh abt_lgd adalah data uji; kolom split memancing latih di test set."""
+    lgd = read_table("gold", "abt_lgd")
+    assert "split" not in lgd.columns
+    sumber = read_table("gold", "abt_lgd_sumber")
+    tumpang = set(lgd["src_sba_loannr"]) & set(sumber["sba_loan_nr"])
+    assert len(tumpang) == len(lgd), (
+        "setiap baris abt_lgd harus bisa dikeluarkan dari data latih lewat "
+        f"src_sba_loannr; yang cocok {len(tumpang)} dari {len(lgd)}"
+    )
 
 
 def test_kamus_menandai_fitur_derau_pada_abt_lgd():

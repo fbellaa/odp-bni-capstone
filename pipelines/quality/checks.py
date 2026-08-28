@@ -219,6 +219,62 @@ def uji_rentang_nilai(h: Hasil) -> None:
     salah = int((agunan["coverage_ratio"] <= 0).sum())
     h.catat("coverage_ratio_positif", salah == 0, f"{salah} agunan dengan coverage <= 0")
 
+    # LGD harus bergerak mengikuti agunan - tapi jangan sampai jadi fungsi
+    # deterministiknya. Dua gerbang, satu di tiap sisi:
+    #
+    #   terlalu lemah (dulu -0,05) -> model tidak bisa menjawab pertanyaan
+    #                                 agunan sama sekali
+    #   terlalu kuat  (< -0,70)    -> LGD cuma coverage yang ditulis ulang;
+    #                                 R2 palsu dan tak ada yang dipelajari
+    #
+    # Yang dipakai coverage terhadap EAD, bukan terhadap plafon: yang harus
+    # ditutup saat workout adalah baki debet, dan EAD median cuma 0,82x plafon.
+    cov = (
+        agunan.groupby("facility_id")["coverage_ratio"].first().rename("coverage")
+    )
+    dgn_cov = default.join(cov, on="facility_id")
+    ead_thd_plafon = dgn_cov["ead_rp"] / dgn_cov["facility_id"].map(
+        fasilitas.set_index("facility_id")["plafon_rp"]
+    )
+    cov_ead = dgn_cov["coverage"] / ead_thd_plafon.where(ead_thd_plafon > 0)
+    layak = cov_ead.notna() & dgn_cov["lgd_realisasi"].notna()
+    korelasi = float(dgn_cov.loc[layak, "lgd_realisasi"].corr(cov_ead[layak]))
+    h.catat(
+        "lgd_mengikuti_agunan",
+        -0.70 <= korelasi <= -0.20,
+        f"corr(LGD, coverage terhadap EAD) = {korelasi:+.3f}, harus di [-0,70; -0,20]",
+    )
+
+    # Sisi lain dari gerbang di atas. Urutan LGD dibentuk agunan DAN fitur SBA;
+    # kalau porsi SBA-nya hilang, tabel penerapan tidak lagi bisa diskor model
+    # yang dilatih di abt_lgd_sumber - dan di sana tidak ada kolom agunan sama
+    # sekali. Pernah terjadi: transfer jatuh dari R2 +0,42 ke -0,43.
+    sba_peringkat = read_table(
+        "silver", "sl_peta_sba", columns=["cif_sk", "lgd_realisasi"]
+    ).rename(columns={"lgd_realisasi": "lgd_sba"})
+    pasangan = default.merge(sba_peringkat, on="cif_sk", how="inner")
+    spearman = float(
+        pasangan["lgd_realisasi"].corr(pasangan["lgd_sba"], method="spearman")
+    )
+    h.catat(
+        "lgd_transfer_sba_terjaga",
+        spearman > 0.35,
+        f"korelasi peringkat LGD portofolio vs SBA = {spearman:+.3f}, harus > 0,35",
+    )
+
+    # Pemetaan peringkat hanya menata ULANG nilai LGD SBA, tidak menciptakan
+    # nilai baru. Kalau rata-ratanya bergeser, ada yang salah di pemetaannya.
+    sba_lgd = read_table("silver", "sl_peta_sba", columns=["cif_sk", "lgd_realisasi"])
+    rerata_sumber = float(
+        sba_lgd[sba_lgd["cif_sk"].isin(default["cif_sk"])]["lgd_realisasi"].mean()
+    )
+    rerata_hasil = float(default["lgd_realisasi"].mean())
+    h.catat(
+        "lgd_marginal_sama_dengan_sba",
+        abs(rerata_hasil - rerata_sumber) < 0.02,
+        f"rerata LGD {rerata_hasil:.4f} vs sumber SBA {rerata_sumber:.4f}",
+    )
+
     tahun_per_cif = lk.groupby("cif_sk")["tahun_buku"].nunique()
     kurang = int((tahun_per_cif != settings.panel_years).sum())
     h.catat(
@@ -524,6 +580,24 @@ def uji_abt(h: Hasil) -> None:
         not ekor,
         f"rasio max/p99 di atas 200x: {ekor or 'tidak ada'}",
     )
+
+    # Penjualan dijepit ke band segmen komersial tapi neraca ditarik terpisah,
+    # jadi tanpa penyaringan ~5% baris punya aset puluhan sampai ribuan kali
+    # omzet - dan seluruh blok fin_ ikut rusak karena rasio dihitung dari kolom
+    # level yang sama. Gerbang ini menjaga filter di exports/abt.py tetap
+    # terpasang; kalau ambangnya digeser atau filternya hilang, uji ini gagal.
+    for nama_abt, tabel_abt in (("abt_pd", abt_pd), ("abt_pengajuan_ditolak", ditolak)):
+        if tabel_abt is None or "fin_total_aset_rp" not in tabel_abt.columns:
+            continue
+        penjualan = tabel_abt["fin_penjualan_rp"]
+        rasio = tabel_abt["fin_total_aset_rp"] / penjualan.where(penjualan > 0)
+        lolos_batas = int((rasio > settings.aset_thd_penjualan_maks).sum())
+        h.catat(
+            f"{nama_abt}_neraca_sepadan_penjualan",
+            lolos_batas == 0,
+            f"{lolos_batas} baris beraset > {settings.aset_thd_penjualan_maks}x penjualan"
+            f" (maks {rasio.max():.1f}x)",
+        )
 
     # Embedding graf hasil SVD atas adjacency berbobot log. Kalau bobot rupiah
     # mentah bocor kembali ke sana, nilainya langsung meledak ke 1e13.

@@ -105,6 +105,63 @@ class Settings:
     saldo_min_rp: float = 10e9
     saldo_max_rp: float = 50e9
 
+    # Batas kewajaran neraca terhadap penjualan pada ABT.
+    #
+    # Penjualan dibatasi ke band segmen komersial (Rp 30-300 M), tapi neraca dan
+    # laba-rugi ditarik terpisah, sehingga ~5% debitur berakhir dengan aset
+    # puluhan sampai ribuan kali omzetnya. Profil itu koheren ke dalam
+    # (aset = liabilitas + ekuitas tetap eksak, |EBITDA|/aset tetap wajar) tapi
+    # tidak punya padanan di segmen ini, dan yang menentukan: bad rate-nya sama
+    # dengan populasi (3,4% vs 3,2%) padahal skor kreditnya jatuh (median 38 vs
+    # 61). Jadi baris itu memberi sinyal distress ekstrem ke seluruh blok fin_
+    # tanpa outcome yang mengikutinya - derau label persis di fitur terkuat.
+    #
+    # Ambang 10x = asset turnover < 0,1. Tidak ada celah alami di distribusinya
+    # (ekornya meluruh mulus), jadi angka ini adalah keputusan: cukup longgar
+    # untuk melewatkan usaha padat aset yang sah, cukup ketat untuk menyingkirkan
+    # ekor yang tak bisa ditafsirkan.
+    aset_thd_penjualan_maks: float = 10.0
+
+    # ------------------------------------------------ workout LGD (agunan)
+    # LGD dulunya disalin bulat-bulat dari SBA dan tidak pernah menyentuh
+    # FACT_AGUNAN, sehingga korelasinya terhadap coverage ratio nol (0,05) -
+    # model LGD tidak bisa menjawab "berapa kerugian kalau agunan ditambah",
+    # pertanyaan yang justru paling sering datang dari bisnis.
+    #
+    # Parameter di bawah membentuk LGD STRUKTURAL: berapa yang benar-benar
+    # tertagih dari eksekusi agunan. Yang menentukan bukan ada/tidaknya agunan,
+    # melainkan agunan yang bisa dieksekusi - lihat _lgd_dari_agunan().
+    #
+    # Nilai agunan turun antara taksasi (15-90 hari sebelum cair) dan eksekusi
+    # (bertahun kemudian, saat debitur kolaps dan pasar sedang buruk).
+    workout_penurunan_nilai: tuple[float, float] = (0.60, 0.90)
+    # Biaya lelang, kuasa hukum, dan pengurusan - dipotong dari hasil eksekusi.
+    workout_biaya: float = 0.12
+    # Sisa tagihan di atas nilai agunan praktis tidak berjaminan.
+    workout_pemulihan_tanpa_jaminan: tuple[float, float] = (0.05, 0.15)
+    # Eksekusi agunan di Indonesia jarang selesai di bawah setahun.
+    workout_tahun: tuple[float, float] = (1.0, 3.5)
+    workout_diskonto: float = 0.10
+    # Sebaran nilai LGD tetap diambil dari SBA; yang dibentuk di sini URUTANNYA.
+    #
+    # Urutan itu dibentuk DUA penggerak, dan porsinya penting. Versi pertama
+    # memakai agunan saja (bobot_sba = 0), dan itu keliru: ia mengacak ulang
+    # urutan LGD SBA sampai hubungan fitur-SBA terhadap target hilang sama
+    # sekali. Terukur - model yang dilatih di 156.610 pinjaman SBA lalu
+    # diterapkan ke portofolio jatuh dari R2 +0,42 ke -0,43, yaitu lebih buruk
+    # daripada sekadar menebak rata-rata. Padahal tenor, porsi penjaminan, dan
+    # sektor memang memengaruhi LGD di pasar mana pun.
+    #
+    # 0,55 menyeimbangkan keduanya: korelasi LGD-coverage sekitar -0,26 (sejajar
+    # data workout bank riil) sementara transfer SBA -> portofolio bertahan di
+    # R2 ~0,28, hampir setara R2 dalam-domain SBA sendiri (0,33). Menaikkannya
+    # mengembalikan transfer tapi mematikan sinyal agunan; menurunkannya
+    # sebaliknya. Dua gerbang di quality/checks.py menjaga keduanya.
+    workout_bobot_sba: float = 0.55
+    # Derau pengacak di atas campuran peringkat. Kecil saja - dua penggerak
+    # sudah menyediakan variasinya sendiri.
+    workout_sigma_peringkat: float = 0.05
+
     # -------------------------------- injeksi afiliasi tersembunyi (langkah 7)
     # Komposisi klaster: 2 debitur yang benar-benar gagal bayar + 4 yang tidak.
     # Keanggotaan klaster otomatis berkorelasi dengan label - dilusi 2:4 menjaga

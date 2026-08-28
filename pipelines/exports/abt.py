@@ -60,6 +60,33 @@ def _blok(df: pd.DataFrame, prefiks: str, kecuali: set[str]) -> pd.DataFrame:
     )
 
 
+def _buang_neraca_tak_sepadan(df: pd.DataFrame, nama: str) -> pd.DataFrame:
+    """Singkirkan baris yang neracanya tidak sepadan dengan omzetnya.
+
+    Penjualan dijepit ke band segmen komersial, neraca tidak - hasilnya sebagian
+    debitur punya aset puluhan sampai ribuan kali penjualan. Rasio turunannya
+    ikut rusak: asset_turnover, roa, dan der memang dihitung langsung dari kolom
+    level ini (cocok persis di 98-99% baris), jadi "modelnya kan pakai rasio"
+    tidak menyelamatkan apa pun. Lihat `settings.aset_thd_penjualan_maks`.
+
+    Dibuang di lapisan ABT, bukan di fact_laporan_keuangan: tabel fakta merekam
+    apa yang dilaporkan, dan yang tidak layak dimodelkan belum tentu tidak layak
+    disimpan.
+    """
+    penjualan = df["fin_penjualan_rp"]
+    rasio = df["fin_total_aset_rp"] / penjualan.where(penjualan > 0)
+    tak_wajar = rasio > settings.aset_thd_penjualan_maks
+    if tak_wajar.any():
+        LOG.info(
+            "%s: %s baris (%.2f%%) dibuang, aset/penjualan > %sx",
+            nama,
+            int(tak_wajar.sum()),
+            100 * tak_wajar.mean(),
+            settings.aset_thd_penjualan_maks,
+        )
+    return df[~tak_wajar].reset_index(drop=True)
+
+
 # --------------------------------------------------------------------- ABT PD
 def build_abt_pd() -> pd.DataFrame:
     """Satu baris per pengajuan yang cair, dengan target PD 12 bulan."""
@@ -221,6 +248,8 @@ def build_abt_pd() -> pd.DataFrame:
     fitur = [c for c in abt.columns if c.startswith(("fin_", "app_", "graf_"))]
     abt = abt[kunci + sorted(fitur) + target]
 
+    abt = _buang_neraca_tak_sepadan(abt, "abt_pd")
+
     _pastikan_bersih(abt, "abt_pd")
     return abt.sort_values("tanggal_pengajuan").reset_index(drop=True)
 
@@ -304,7 +333,9 @@ def build_abt_pengajuan_ditolak(abt_pd: pd.DataFrame) -> pd.DataFrame:
     kolom_akhir = [
         c for c in abt_pd.columns if not c.startswith("y_") and c not in tanpa
     ]
-    return ditolak[kolom_akhir].reset_index(drop=True)
+    # Aturan yang sama seperti abt_pd: reject inference menskor kedua tabel
+    # dengan satu model, jadi keduanya harus disaring identik.
+    return _buang_neraca_tak_sepadan(ditolak[kolom_akhir], "abt_pengajuan_ditolak")
 
 
 # -------------------------------------------------------------------- ABT EWS
@@ -408,32 +439,43 @@ FITUR_LGD_TERAPAN = [
     "app_porsi_penjaminan",
 ]
 
-FITUR_LGD_BERSINYAL = {*FITUR_LGD_TERAPAN, "app_produk_id"}
+# Kolom agunan ikut bersinyal sejak LGD diturunkan dari hasil eksekusi agunan
+# (lihat _lgd_dari_agunan di generators/sintesis.py). Sebelumnya keempatnya
+# derau murni - korelasi 0,05 - karena agunan disintesis tanpa melihat LGD.
+FITUR_LGD_AGUNAN = {
+    "app_coverage_ratio",
+    "app_nilai_likuidasi_rp",
+    "app_jumlah_agunan",
+    "app_lgd_ditutup_agunan",
+}
+
+FITUR_LGD_BERSINYAL = {*FITUR_LGD_TERAPAN, "app_produk_id", *FITUR_LGD_AGUNAN}
 
 
 def build_abt_lgd() -> pd.DataFrame:
     """Fasilitas yang default, dengan LGD realisasi dari SBA sebagai target.
 
-    PERINGATAN: ratusan baris saja, dan hanya kolom pada FITUR_LGD_BERSINYAL
-    yang punya hubungan nyata dengan target - karena berasal dari baris SBA yang
-    sama. Sisanya disintesis terpisah dari target, jadi derau.
+    PERINGATAN: ratusan baris saja. Kolom di luar FITUR_LGD_BERSINYAL
+    disintesis terpisah dari target, jadi derau.
 
-    Termasuk derau: seluruh kolom agunan (app_nilai_likuidasi_rp,
-    app_coverage_ratio, app_jumlah_agunan, app_lgd_ditutup_agunan). Agunan
-    disintesis tanpa melihat lgd_realisasi, jadi korelasinya dengan target nol
-    secara konstruksi - terukur 0,05 terhadap coverage_ratio. Akibat yang
-    terlihat di angka: 100% fasilitas agunannya menutup EAD (median 1,74x)
-    namun mean LGD tetap 0,64, dan 48 baris rugi >90%.
+    Kolom agunan DULUNYA termasuk derau. Versi lama modul ini beralasan bahwa
+    menyambungkan LGD ke agunan akan membuat target jadi fungsi deterministik
+    fitur - keberatan yang sah, tapi hanya berlaku untuk penyambungan langsung.
+    Yang dipakai sekarang (_lgd_dari_agunan) memisahkan urutan dari nilai:
+    agunan menentukan fasilitas mana yang rugi lebih besar, sebaran nilainya
+    tetap diambil dari SBA, dan `workout_sigma_peringkat` mengatur seberapa
+    ketat ikatannya. Hasilnya korelasi -0,35 terhadap coverage - sekelas data
+    workout bank riil, bukan 1,0 dan bukan pula 0,05 seperti sebelumnya.
 
-    Itu BUKAN untuk diperbaiki dengan menyambungkan keduanya. Menurunkan LGD
-    dari agunan membuat target menjadi fungsi deterministik fitur (model cuma
-    menemukan kembali rumusnya), sedangkan menyintesis agunan dari LGD adalah
-    arah kausal terbalik - kesalahan yang sama persis dengan yang diperingatkan
-    generators/afiliasi.py. Yang benar: jangan pakai kolom agunan sebagai fitur
-    LGD, dan pakai tabel ini untuk expected loss tingkat portofolio.
+    Yang TIDAK berubah: tabel ini tetap untuk MENERAPKAN model LGD, bukan
+    melatihnya. Data latihnya `abt_lgd_sumber`, dan di sana tidak ada kolom
+    agunan sama sekali - jadi model satu tahap tetap tidak bisa memakainya.
+    Sensitivitas terhadap agunan harus datang dari lapisan kedua yang
+    dikalibrasi di sini.
 
-    Tabel ini untuk MENERAPKAN model LGD dan menghitung expected loss, bukan
-    untuk melatihnya. Data latihnya ada di `abt_lgd_sumber`.
+    Tidak ada kolom `split`: seluruh tabel ini adalah data uji. Yang melatih
+    adalah `abt_lgd_sumber` dikurangi 214 baris ini (dicocokkan lewat
+    `src_sba_loannr`).
     """
     default = read_table("gold", "fact_default")
     fasilitas = read_table("gold", "fact_fasilitas")
@@ -511,8 +553,10 @@ def build_abt_lgd() -> pd.DataFrame:
     abt["app_lgd_ditutup_agunan"] = (
         abt["app_nilai_likuidasi_rp"] / abt["app_ead_rp"]
     ).clip(0, 5)
-    abt["split"] = _tandai_split(abt["tanggal_pencairan"])
-
+    # Sengaja TANPA kolom `split`. Peninggalan skema lama yang memecah 214 baris
+    # jadi 194 latih / 20 uji - dua-duanya terlalu kecil, dan yang lebih
+    # berbahaya: kode yang membacanya otomatis akan melatih di 194 baris yang
+    # justru merupakan data uji. Skema yang benar ada di docstring.
     _pastikan_bersih(abt, "abt_lgd")
     return abt.drop(columns=["jumlah_pemulihan_rp"]).reset_index(drop=True)
 
@@ -620,11 +664,15 @@ def _catatan_kolom(nama_abt: str, kolom: str, kategori: str) -> str:
     catatan: list[str] = []
 
     if nama_abt == "abt_lgd" and kategori in ("app", "fin"):
-        catatan.append(
-            "sinyal nyata - dari baris SBA yang sama dengan target"
-            if kolom in FITUR_LGD_BERSINYAL
-            else "DERAU terhadap LGD - disintesis terpisah dari target"
-        )
+        if kolom in FITUR_LGD_AGUNAN:
+            catatan.append(
+                "sinyal nyata - LGD diturunkan dari eksekusi agunan; TIDAK ada "
+                "padanannya di abt_lgd_sumber, jadi hanya untuk lapisan kedua"
+            )
+        elif kolom in FITUR_LGD_BERSINYAL:
+            catatan.append("sinyal nyata - dari baris SBA yang sama dengan target")
+        else:
+            catatan.append("DERAU terhadap LGD - disintesis terpisah dari target")
     if kolom in ("app_keputusan", "app_pricing_bps", "app_komite_level"):
         catatan.append(
             "hasil keputusan, bukan input - drop bila model untuk mendukung keputusan"

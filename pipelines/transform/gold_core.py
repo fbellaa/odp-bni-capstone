@@ -27,8 +27,10 @@ def build_gold_core() -> dict[str, int]:
     fact_fasilitas = sintesis.buat_fact_fasilitas(fact_pengajuan, dim_debitur, rng)
     fact_agunan = sintesis.buat_fact_agunan(fact_fasilitas, dim_debitur, rng)
     fact_covenant = sintesis.buat_fact_covenant(fact_fasilitas, fact_lk, dim_debitur, rng)
+    # fact_agunan harus sudah ada: LGD kini ditentukan hasil eksekusi agunan,
+    # bukan disalin dari SBA.
     fact_kolektibilitas, fact_default = sintesis.buat_kolektibilitas_dan_default(
-        fact_fasilitas, dim_debitur, rng
+        fact_fasilitas, dim_debitur, fact_agunan, rng
     )
     dim_grup, fact_eksposur = sintesis.buat_grup_dan_eksposur(
         dim_debitur, fact_fasilitas, fact_kolektibilitas, rng

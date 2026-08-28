@@ -265,6 +265,11 @@ class HasilResolusi:
     kandidat: pd.DataFrame = field(default_factory=pd.DataFrame)
     jalur_terpakai: list[str] = field(default_factory=list)
     jalur_kosong: list[str] = field(default_factory=list)
+    # Semesta yang benar-benar tercari pada tanggal penilaian, per jalur.
+    # Ada di sini supaya lapisan memo tidak bisa menuliskan klaim yang lebih
+    # besar dari datanya: "tidak ditemukan" hanya bermakna bersama "dicari di
+    # antara berapa". Lihat cakupan_pencarian().
+    cakupan: dict[str, int] = field(default_factory=dict)
 
     @property
     def jumlah_kandidat(self) -> int:
@@ -278,6 +283,53 @@ class HasilResolusi:
         return self.jumlah_kandidat >= 3 or bool(
             (self.kandidat["dasar"] == "pengurus_bersama").any()
         )
+
+
+def cakupan_pencarian(tanggal: pd.Timestamp | str) -> dict[str, int]:
+    """Besar semesta yang bisa dicari pada tanggal penilaian, per jalur.
+
+    Hasil nihil dari telusuri_afiliasi() tidak berarti apa-apa tanpa angka ini.
+    "Tidak ditemukan afiliasi" adalah klaim tentang seluruh dunia; yang bisa
+    dibuktikan datanya hanya "tidak ditemukan di antara sekian debitur yang
+    kami kenal per tanggal sekian". Selisih dua pernyataan itu persis yang
+    memisahkan catatan CDD yang bisa dipertanggungjawabkan dari yang tidak.
+
+    Angkanya dihitung dengan filter titik-waktu yang SAMA dengan pencocoknya -
+    kalau berbeda, memo akan menyebut cakupan yang tidak pernah benar-benar
+    dicari.
+    """
+    tanggal = pd.Timestamp(tanggal)
+    hasil: dict[str, int] = {}
+
+    if table_exists("gold", "dim_alamat") and table_exists("gold", "fact_alamat_debitur"):
+        dim = read_table("gold", "dim_alamat")
+        # Alamat agen registrasi dibuang di cocokkan_alamat, jadi tidak boleh
+        # ikut dihitung sebagai cakupan.
+        layak = dim[~dim["is_alamat_agen"]]
+        jembatan = _aktif_pada(read_table("gold", "fact_alamat_debitur"), tanggal)
+        hasil["alamat"] = int(layak["alamat_id"].nunique())
+        hasil["debitur_beralamat"] = int(
+            jembatan[jembatan["alamat_id"].isin(layak["alamat_id"])]["cif_sk"].nunique()
+        )
+
+    pihak_aktif: set[int] = set()
+    for tabel in ("fact_kepengurusan", "fact_kepemilikan"):
+        if table_exists("gold", tabel):
+            df = _aktif_pada(read_table("gold", tabel), tanggal)
+            if not df.empty:
+                pihak_aktif |= set(df["pihak_id"].astype("int64"))
+    if pihak_aktif:
+        hasil["pihak"] = len(pihak_aktif)
+
+    if table_exists("gold", "bridge_rekening") and table_exists("gold", "fact_transfer_giro"):
+        bridge = read_table("gold", "bridge_rekening", columns=["rekening_id", "src_aml_account"])
+        transfer = read_table("gold", "fact_transfer_giro", columns=["waktu"])
+        hasil["rekening_lawan"] = int(bridge["src_aml_account"].nunique())
+        hasil["transfer_sampai_tanggal"] = int(
+            (pd.to_datetime(transfer["waktu"]) <= tanggal).sum()
+        )
+
+    return hasil
 
 
 def telusuri_afiliasi(
@@ -315,8 +367,18 @@ def telusuri_afiliasi(
         terpakai.append(nama_jalur)
         bagian.append(hasil)
 
+    cakupan = cakupan_pencarian(tanggal)
+
     if not bagian:
-        return HasilResolusi(tanggal=tanggal, jalur_terpakai=terpakai, jalur_kosong=kosong)
+        # Nihil, TAPI tercatat berapa besar yang dicari. Tanpa cakupan, keadaan
+        # ini tidak bisa dibedakan dari "pencarian tidak pernah jalan".
+        LOG.info(
+            "resolusi %s: nihil, jalur kosong %s, cakupan %s",
+            tanggal.date(), kosong, cakupan,
+        )
+        return HasilResolusi(
+            tanggal=tanggal, jalur_terpakai=terpakai, jalur_kosong=kosong, cakupan=cakupan
+        )
 
     kandidat = pd.concat(bagian, ignore_index=True)
     kandidat["cif_sk"] = kandidat["cif_sk"].astype("int64")
@@ -342,4 +404,5 @@ def telusuri_afiliasi(
         kandidat=kandidat.reset_index(drop=True),
         jalur_terpakai=terpakai,
         jalur_kosong=kosong,
+        cakupan=cakupan,
     )

@@ -168,6 +168,51 @@ def test_tanpa_dokumen_apa_pun_hasilnya_kosong_bukan_bersih():
     assert all("dokumen tidak disertakan" in j for j in hasil.jalur_kosong)
 
 
+def test_cakupan_tercatat_meski_hasilnya_nihil():
+    """Perusahaan benar-benar baru: nihil, tapi harus tercatat dicari di antara berapa.
+
+    Tanpa cakupan, 'tidak ditemukan afiliasi' adalah klaim tentang seluruh dunia
+    padahal yang dicari hanya basis nasabah bank. Selisih itu yang memisahkan
+    catatan CDD yang bisa dipertanggungjawabkan dari yang tidak.
+    """
+    hasil = resolusi.telusuri_afiliasi(
+        tanggal=HARI_INI,
+        nama_pengurus=["Zulqarnain Bagaskoro Adiwijaya"],  # tidak ada di dim_pihak
+        rekening_lawan=["rekening-yang-tidak-pernah-ada"],
+    )
+    assert hasil.jumlah_kandidat == 0
+    assert not hasil.perlu_telaah
+    assert hasil.cakupan, "hasil nihil wajib tetap membawa cakupan pencarian"
+    assert hasil.cakupan.get("pihak", 0) > 0
+    assert hasil.cakupan.get("rekening_lawan", 0) > 0
+    # Dua jalur dicari dan nihil; satu memang tidak disertakan dokumennya.
+    assert sum("tidak ada kecocokan" in j for j in hasil.jalur_kosong) == 2
+    assert sum("dokumen tidak disertakan" in j for j in hasil.jalur_kosong) == 1
+
+
+def test_cakupan_tunduk_pada_titik_waktu():
+    """Cakupan harus memakai filter tanggal yang sama dengan pencocoknya.
+
+    Perhatikan dua sifat yang berbeda. Transfer bersifat kumulatif - semakin
+    jauh tanggalnya, semakin banyak yang sudah terjadi. Pengurus/pemilik aktif
+    adalah SNAPSHOT: 15.371 dari 43.039 baris kepengurusan punya valid_to, jadi
+    jumlah aktifnya bisa turun saat pengurus mundur. Menuntutnya monoton naik
+    akan salah, dan lebih buruk lagi: akan mendorong orang melonggarkan filter
+    valid_to supaya tesnya hijau.
+    """
+    awal = resolusi.cakupan_pencarian("2022-06-30")
+    akhir = resolusi.cakupan_pencarian(HARI_INI)
+    assert awal["transfer_sampai_tanggal"] < akhir["transfer_sampai_tanggal"]
+    assert awal["pihak"] > 0 and akhir["pihak"] > 0
+
+
+def test_cakupan_tidak_menghitung_alamat_agen():
+    """Alamat agen dibuang di cocokkan_alamat, jadi tidak boleh diklaim tercari."""
+    dim = read_table("gold", "dim_alamat")
+    cakupan = resolusi.cakupan_pencarian(HARI_INI)
+    assert cakupan["alamat"] == int((~dim["is_alamat_agen"]).sum())
+
+
 def test_pengurus_bersama_memicu_telaah():
     pihak = read_table("gold", "dim_pihak", columns=["pihak_id", "nama"])
     kepengurusan = read_table("gold", "fact_kepengurusan")

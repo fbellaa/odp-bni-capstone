@@ -622,12 +622,110 @@ def _umur_ke_default(
     return hasil
 
 
+# Kekuatan eksekusi hak jaminan. Bukan soal nilai agunan, tapi soal seberapa
+# besar nilai itu benar-benar bisa ditarik saat debitur kolaps. APHT bisa
+# dilelang lewat KPKNL; fidusia atas persediaan sering menguap lebih dulu;
+# cesie piutang bergantung pada bonafiditas pihak ketiga yang ikut terdampak.
+MUTU_PENGIKATAN = {"APHT": 1.00, "gadai": 1.00, "fidusia": 0.75, "cesie": 0.60}
+
+
+def _lgd_dari_agunan(
+    baris_def: pd.DataFrame, agunan: pd.DataFrame, sba_lgd: pd.Series, rng: np.random.Generator
+) -> pd.Series:
+    """Tentukan LGD dari hasil eksekusi agunan, dengan sebaran nilai tetap dari SBA.
+
+    Dua langkah, dan pemisahannya yang penting.
+
+    1. LGD STRUKTURAL - berapa yang tertagih kalau agunan dieksekusi:
+
+           nilai_workout = nilai_likuidasi x penurunan_nilai x mutu_pengikatan
+           pemulihan     = min(EAD, nilai_workout) x (1 - biaya)
+                         + max(0, EAD - nilai_workout) x pemulihan_tanpa_jaminan
+           lgd           = 1 - (pemulihan / EAD) / (1 + diskonto)^tahun
+
+       `nilai_likuidasi_rp` sudah memuat haircut jenis agunan, jadi dua faktor
+       tambahan di atas menambah dimensi yang berbeda: penyusutan ekonomis sejak
+       taksasi, dan daya paksa hukum pengikatannya.
+
+       Perhatikan coverage_ratio diukur terhadap PLAFON, sedangkan yang harus
+       ditutup adalah EAD - dan EAD median hanya 0,82x plafon. Coverage efektif
+       karena itu berbeda antar fasilitas meski coverage tertulisnya sama.
+
+    2. PEMETAAN PERINGKAT - SBA dan agunan sama-sama membentuk urutan, SBA
+       menentukan nilai.
+
+       Memakai lgd_struktural apa adanya membuat LGD jadi fungsi deterministik
+       coverage (R2 ~ 1) dan merusak marginalnya (median 0,33 vs 0,64 di SBA).
+       Yang dipakai di sini perlakuannya sama dengan _umur_ke_default: urutkan
+       fasilitas, lalu bagikan nilai LGD SBA yang sudah diurutkan menurut
+       peringkat itu. Marginal SBA terjaga persis.
+
+       Urutannya dicampur dari DUA peringkat, bukan satu:
+
+           skor = w x peringkat(lgd_sba) + (1-w) x peringkat(lgd_struktural)
+
+       Memakai agunan saja (w = 0) tampak benar tapi diam-diam merusak: ia
+       mengacak ulang urutan SBA sampai fitur SBA tidak lagi memprediksi LGD
+       di portofolio. Terukur - model SBA yang diterapkan ke portofolio jatuh
+       dari R2 +0,42 ke -0,43. Padahal tenor dan porsi penjaminan memang
+       memengaruhi LGD di pasar mana pun; yang berbeda antar pasar adalah
+       agunannya, bukan hilangnya pengaruh itu.
+    """
+    if baris_def.empty:
+        return pd.Series(dtype="float64")
+
+    ag = agunan.copy()
+    ag["mutu"] = ag["status_pengikatan"].map(MUTU_PENGIKATAN).fillna(0.70)
+    ag["tertimbang"] = ag["mutu"] * ag["nilai_likuidasi_rp"]
+    per_fasilitas = ag.groupby("facility_id").agg(
+        likuidasi=("nilai_likuidasi_rp", "sum"), tertimbang=("tertimbang", "sum")
+    )
+    # Rata-rata mutu ditimbang nilai: satu deposito besar tidak boleh tertutup
+    # oleh dua fidusia kecil, dan sebaliknya.
+    mutu = (per_fasilitas["tertimbang"] / per_fasilitas["likuidasi"]).fillna(0.70)
+
+    fid = baris_def["facility_id"]
+    ead = baris_def["ead_rp"].to_numpy(dtype=float)
+    likuidasi = fid.map(per_fasilitas["likuidasi"]).fillna(0.0).to_numpy(dtype=float)
+    n = len(baris_def)
+
+    nilai_workout = likuidasi * rng.uniform(*settings.workout_penurunan_nilai, n) * fid.map(mutu).fillna(0.70).to_numpy()
+    tertutup = np.minimum(ead, nilai_workout)
+    sisa = np.maximum(0.0, ead - nilai_workout)
+    pemulihan = tertutup * (1 - settings.workout_biaya) + sisa * rng.uniform(
+        *settings.workout_pemulihan_tanpa_jaminan, n
+    )
+    tahun = rng.uniform(*settings.workout_tahun, n)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        struktural = 1 - (pemulihan / np.where(ead > 0, ead, np.nan)) / (
+            1 + settings.workout_diskonto
+        ) ** tahun
+    struktural = np.nan_to_num(np.clip(struktural, 0.0, 1.0), nan=0.45)
+
+    w = settings.workout_bobot_sba
+    peringkat_sba = sba_lgd.rank(pct=True, method="first").to_numpy(dtype=float)
+    peringkat_struktural = pd.Series(struktural).rank(pct=True, method="first").to_numpy()
+    skor = (
+        w * peringkat_sba
+        + (1 - w) * peringkat_struktural
+        + rng.normal(0, settings.workout_sigma_peringkat, n)
+    )
+    peringkat = pd.Series(skor).rank(method="first").astype(int).to_numpy()
+
+    # Sebaran nilai diambil dari LGD SBA fasilitas-fasilitas ini sendiri, jadi
+    # marginalnya identik dengan yang dulu disalin langsung - hanya urutannya
+    # yang kini ditentukan agunan.
+    nilai = np.sort(sba_lgd.to_numpy(dtype=float))
+    return pd.Series(nilai[peringkat - 1], index=baris_def.index)
+
+
 def buat_kolektibilitas_dan_default(
     fasilitas: pd.DataFrame,
     dim_debitur: pd.DataFrame,
+    agunan: pd.DataFrame,
     rng: np.random.Generator,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Migrasi kolektibilitas bulanan; yang default memakai LGD nyata dari SBA."""
+    """Migrasi kolektibilitas bulanan; LGD dari eksekusi agunan, nilainya dari SBA."""
     sba = read_table("silver", "sl_peta_sba").set_index("cif_sk")
     label = dim_debitur[dim_debitur["is_current"]].set_index("cif_sk")["label_default_debitur"]
 
@@ -700,23 +798,41 @@ def buat_kolektibilitas_dan_default(
             )
 
         if pd.notna(tanggal_default):
-            lgd = sba.loc[cif, "lgd_realisasi"] if cif in sba.index else np.nan
-            lgd = float(lgd) if pd.notna(lgd) else 0.45
-            ead = float(fas["outstanding_rp"])
+            lgd_sba = sba.loc[cif, "lgd_realisasi"] if cif in sba.index else np.nan
             baris_def.append(
                 {
                     "facility_id": int(fas["facility_id"]),
                     "cif_sk": cif,
                     "tanggal_default": tanggal_default,
-                    "ead_rp": ead,
-                    "lgd_realisasi": round(lgd, 4),
-                    "jumlah_pemulihan_rp": round(ead * (1 - lgd), -6),
+                    "ead_rp": float(fas["outstanding_rp"]),
+                    "lgd_sba": float(lgd_sba) if pd.notna(lgd_sba) else 0.45,
                     "src_sba_loannr": sba.loc[cif, "src_sba_loannr"] if cif in sba.index else None,
                 }
             )
 
     kolektibilitas = pd.DataFrame(baris_kol)
     default = pd.DataFrame(baris_def)
+
+    # LGD ditentukan setelah seluruh populasi default terkumpul: pemetaan
+    # peringkat butuh melihat semuanya sekaligus.
+    if not default.empty:
+        default["lgd_realisasi"] = _lgd_dari_agunan(
+            default, agunan, default["lgd_sba"], rng
+        ).round(4)
+        default["jumlah_pemulihan_rp"] = (
+            default["ead_rp"] * (1 - default["lgd_realisasi"])
+        ).round(-6)
+        default = default.drop(columns=["lgd_sba"])[
+            [
+                "facility_id",
+                "cif_sk",
+                "tanggal_default",
+                "ead_rp",
+                "lgd_realisasi",
+                "jumlah_pemulihan_rp",
+                "src_sba_loannr",
+            ]
+        ]
     LOG.info("kolektibilitas %s baris, default %s fasilitas", len(kolektibilitas), len(default))
     return kolektibilitas, default
 
