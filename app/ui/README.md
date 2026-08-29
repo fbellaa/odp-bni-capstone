@@ -3,10 +3,12 @@
 Frontend live demo untuk **Agentic AI Copilot untuk Keputusan Kredit Komersial**.
 Susunan halaman mengikuti proposal bagian 9.3.
 
-> **Status: data dummy.** Model PD/LGD, lapisan graf, dan agen belum tersambung.
-> Seluruh angka dibangkitkan `lib/dummy_data.py` dan dihitung `lib/mock_engine.py`
-> secara deterministik (seed tetap) supaya interaksi demo tetap responsif dan
-> tampilan konsisten antar sesi.
+> **Status: model sungguhan, sebagian lapisan masih demo.** PD, EWS, LGD, dan
+> ruang klaster portofolio dibaca dari `ml/models` di atas `data/gold` lewat
+> `lib/model_nyata.py`. Yang belum punya model — skor risiko jaringan, subgraf
+> ego, dan kutipan kebijakan saat index RAG belum dibangun — masih dilayani
+> `lib/dummy_data.py` dan `lib/mock_engine.py`, dan halaman selalu menyebutkan
+> bagian mana yang demo.
 
 ## Batas segmen yang dipakai antarmuka
 
@@ -45,19 +47,24 @@ streamlit run app.py \
 app/ui/
 ├─ app.py                              Beranda + ringkasan portofolio komersial
 ├─ pages/
-│  ├─ 1_Copilot_Pengajuan.py           Teks bebas -> jejak agen -> gerbang kepatuhan -> memo
-│  ├─ 2_Simulasi_What_If.py            Slider struktur fasilitas, covenant, kurva sensitivitas
+│  ├─ 1_Copilot_Pengajuan.py           Chat + unggahan PDF -> tool -> PD/LGD/klaster -> memo
+│  ├─ 2_Simulasi_What_If.py            Sandbox slider, covenant, kurva sensitivitas
 │  ├─ 3_Struktur_Grup_dan_Jaringan.py  Subgraf ego, penelusuran pemilik manfaat, anomali
-│  ├─ 4_Portofolio_dan_Eksposur_Grup.py Konsentrasi grup, BMPK, uji tekanan, ambang rating
-│  ├─ 5_Kesehatan_Model.py             Metrik, PSI, ablasi graf, evaluasi agen, kualitas data
-│  └─ 6_Dashboard_BI.py                Iframe Metabase (+ pratinjau pengganti)
+│  ├─ 4_Kesehatan_Model.py             Metrik PD/EWS/LGD berbasis recall, PSI, judge arena
+│  └─ 5_Dashboard_BI.py                Iframe Metabase (+ pratinjau pengganti)
 └─ lib/
-   ├─ dummy_data.py                    SATU-SATUNYA sumber data dummy
-   ├─ mock_engine.py                   PD/LGD/EL/pricing, covenant, dan gerbang kepatuhan
+   ├─ model_nyata.py                   Artefak ml/models + data gold: PD, EWS, LGD, klaster
+   ├─ pipeline_copilot.py              PDF -> fakta -> entitas gabungan (jalur LLM / pola)
+   ├─ copilot_lokal.py                 Satu-satunya pintu ke paket `copilot`
+   ├─ dummy_data.py                    Lapisan demo yang belum punya model (graf, kebijakan)
+   ├─ mock_engine.py                   Rantai limit/pricing/covenant dan gerbang kepatuhan
    ├─ memo.py                          Penyusunan draft credit memo komersial
-   ├─ tampilan.py                      Komponen bersama (graf, BMPK, gerbang, reason code)
+   ├─ tampilan.py                      Tema, kartu, meter PD, peta klaster, graf
    └─ format.py                        Format rupiah, miliar, persen, rasio
 ```
+
+Halaman lama `4_Portofolio_dan_Eksposur_Grup.py` dihapus, dan `7_Copilot_Lokal.py`
+dilebur ke halaman 1 — satu halaman pengajuan, bukan dua yang saling menyalin.
 
 ## Yang berubah dari versi UMKM
 
@@ -72,9 +79,8 @@ app/ui/
   masing-masing disertai pasal dan angka penyesuaian yang membuatnya patuh.
 - Halaman 3 menambahkan **penelusuran kepemilikan berlapis** sampai pemilik
   manfaat akhir dan panel eksposur grup terhadap BMPK.
-- Halaman 4 berganti sudut pandang dari komunitas UMKM ke konsentrasi grup
-  debitur, posisi covenant per kelas rating, dan klaster ekosistem.
-- Halaman 5 menambahkan tab evaluasi lapisan agen dan RAG kepatuhan.
+- Halaman 4 (kesehatan model) menghitung metrik langsung dari artefak model,
+  dengan recall sebagai ukuran utama, ditambah hasil judge arena Qwen 14B.
 
 ## Menyambungkan ke FastAPI nanti
 

@@ -19,14 +19,129 @@ SUBJUDUL_APLIKASI = (
     "Segmen komersial — debitur menengah dengan penjualan tahunan Rp 30 sampai 300 miliar."
 )
 
+# --------------------------------------------------------------------------
+# Palet aplikasi
+# --------------------------------------------------------------------------
+# Biru laut sebagai warna induk, teal sebagai aksen, dan deret amber-koral-merah
+# untuk tingkat risiko. Ketiganya dipilih pada tingkat kecerahan yang mirip
+# supaya tidak ada satu warna pun yang "berteriak" di layar ruang komite.
+PRIMER = "#1d5fa8"
+PRIMER_TUA = "#123a63"
+AKSEN = "#12a594"
+AMBER = "#e0a02a"
+KORAL = "#e2683f"
+MERAH = "#cc3b52"
+UNGU = "#7b5ea7"
+HIJAU = "#1f8a5f"
+ABU = "#8b97a6"
+
+DERET_RISIKO = [HIJAU, AKSEN, AMBER, KORAL, MERAH]
+DERET_KATEGORI = [PRIMER, AKSEN, AMBER, UNGU, KORAL, "#3f8fa8", HIJAU, "#a4553a"]
+
+GAYA = """
+<style>
+  :root {
+    --primer:#1d5fa8; --primer-tua:#123a63; --aksen:#12a594;
+    --amber:#e0a02a; --koral:#e2683f; --merah:#cc3b52;
+    --garis:rgba(29,95,168,.16); --lembut:rgba(29,95,168,.06);
+  }
+  .block-container {padding-top:1.6rem; padding-bottom:3.5rem; max-width:1400px;}
+
+  /* Kepala halaman */
+  .hero {display:flex; gap:1.1rem; align-items:flex-start;
+         background:linear-gradient(115deg,var(--primer-tua) 0%,var(--primer) 52%,#1b7f9b 100%);
+         color:#fff; border-radius:18px; padding:1.15rem 1.4rem; margin-bottom:1.1rem;
+         box-shadow:0 10px 26px -16px rgba(18,58,99,.85);}
+  .hero-nomor {font-size:2.1rem; font-weight:800; line-height:1;
+               background:rgba(255,255,255,.16); border-radius:14px;
+               padding:.55rem .85rem; min-width:3.1rem; text-align:center;}
+  .hero-teks h1 {font-size:1.5rem; margin:0 0 .2rem 0; color:#fff; font-weight:700;
+                 letter-spacing:-.01em; padding:0;}
+  .hero-teks p {margin:0; font-size:.92rem; opacity:.9; line-height:1.45;}
+  .hero-chips {margin-top:.6rem; display:flex; flex-wrap:wrap; gap:.4rem;}
+  .hero-chip {background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.28);
+              border-radius:999px; padding:.16rem .65rem; font-size:.75rem;}
+  .hero-chip b {font-weight:700;}
+
+  /* Judul bagian */
+  .bagian {margin:1.5rem 0 .55rem 0; border-left:4px solid var(--aksen); padding-left:.7rem;}
+  .bagian h3 {margin:0; font-size:1.06rem; font-weight:700; letter-spacing:-.01em;}
+  .bagian p {margin:.15rem 0 0 0; font-size:.83rem; opacity:.7;}
+
+  /* Metrik */
+  div[data-testid="stMetric"] {background:#fff; border:1px solid var(--garis);
+        border-radius:14px; padding:.75rem .9rem;
+        box-shadow:0 2px 10px -8px rgba(18,58,99,.55);}
+  div[data-testid="stMetricValue"] {font-size:1.4rem; font-weight:700;}
+  div[data-testid="stMetricLabel"] p {font-size:.78rem; opacity:.72; font-weight:600;}
+
+  /* Kartu */
+  .badge {display:inline-block; padding:.2rem .65rem; border-radius:999px;
+          font-size:.74rem; font-weight:700; letter-spacing:.02em;}
+  .kotak {background:#fff; border:1px solid var(--garis); border-radius:12px;
+          padding:.85rem 1rem; margin-bottom:.6rem;}
+  .kartu {background:#fff; border:1px solid var(--garis); border-left:5px solid var(--w);
+          border-radius:12px; padding:.75rem .95rem; margin-bottom:.55rem;
+          box-shadow:0 2px 10px -9px rgba(18,58,99,.6);}
+  .kartu-judul {font-weight:700; font-size:.92rem; color:var(--w);}
+  .kartu-isi {font-size:.85rem; opacity:.82; margin-top:.15rem; line-height:1.5;}
+  .gerbang {background:#fff; border:1px solid var(--garis); border-left:5px solid var(--w);
+            border-radius:12px; padding:.75rem .95rem; margin-bottom:.55rem;}
+  .gerbang .aspek {font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+            font-size:.7rem;}
+  .gerbang .pasal {font-size:.75rem; opacity:.6; font-family:ui-monospace,monospace;}
+  .tipis {opacity:.72; font-size:.85rem;}
+
+  /* Tab */
+  button[data-baseweb="tab"] {font-weight:600;}
+  div[data-baseweb="tab-list"] {gap:.35rem; border-bottom:1px solid var(--garis);}
+  button[data-baseweb="tab"][aria-selected="true"] {background:var(--lembut);
+        border-radius:10px 10px 0 0;}
+
+  /* Sidebar */
+  section[data-testid="stSidebar"] {background:#f0f4fa; border-right:1px solid var(--garis);}
+  .sidebar-merek {font-size:1.02rem; line-height:1.25; color:var(--primer-tua);
+        border-bottom:1px solid var(--garis); padding-bottom:.6rem; margin-bottom:.7rem;}
+  .sidebar-merek b {font-size:1.12rem;}
+
+  /* Tombol utama */
+  button[kind="primary"] {border-radius:10px; font-weight:700;
+        box-shadow:0 6px 16px -10px rgba(29,95,168,.9);}
+
+  /* Tabel dan expander */
+  div[data-testid="stDataFrame"] {border-radius:12px; overflow:hidden;
+        border:1px solid var(--garis);}
+  details[data-testid="stExpander"] {border-radius:12px; border:1px solid var(--garis);}
+</style>
+"""
+
+
+def gaya_plot(fig, tinggi: int | None = None):
+    """Satu selera untuk semua grafik: latar bersih, kisi tipis, huruf sama."""
+    fig.update_layout(
+        template="plotly_white",
+        font=dict(family="Source Sans Pro, sans-serif", size=12, color="#16212e"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(29,95,168,.03)",
+        margin=dict(l=10, r=10, t=44, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor="rgba(29,95,168,.3)"),
+    )
+    fig.update_xaxes(gridcolor="rgba(29,95,168,.10)", zerolinecolor="rgba(29,95,168,.22)")
+    fig.update_yaxes(gridcolor="rgba(29,95,168,.10)", zerolinecolor="rgba(29,95,168,.22)")
+    if tinggi:
+        fig.update_layout(height=tinggi)
+    return fig
+
+
 PALET_TIPE = {
-    "Badan hukum": "#2f6f9f",
-    "Grup usaha": "#1f4e79",
-    "Pemilik manfaat": "#7b5ea7",
-    "Pengurus": "#8e5572",
-    "Counterparty": "#2e8b6f",
-    "Atribut berbagi": "#b03a48",
-    "Agunan": "#8a7f2e",
+    "Badan hukum": PRIMER,
+    "Grup usaha": PRIMER_TUA,
+    "Pemilik manfaat": UNGU,
+    "Pengurus": "#a35b86",
+    "Counterparty": AKSEN,
+    "Atribut berbagi": MERAH,
+    "Agunan": AMBER,
 }
 
 SIMBOL_TIPE = {
@@ -40,56 +155,72 @@ SIMBOL_TIPE = {
 }
 
 PALET_KOMUNITAS = [
-    "#2f6f9f", "#c9721c", "#2e8b6f", "#b03a48", "#7b5ea7", "#8a7f2e",
-    "#3f8fa8", "#a4553a", "#5f7d3a", "#8e5572", "#3b6b8f", "#9c6b1f",
+    PRIMER, AMBER, AKSEN, MERAH, UNGU, "#8a7f2e",
+    "#3f8fa8", KORAL, "#5f7d3a", "#a35b86", "#3b6b8f", "#9c6b1f",
 ]
 
 WARNA_STATUS = {
-    mock_engine.LOLOS: "#1b7f4b",
-    mock_engine.TELAAH: "#b58900",
-    mock_engine.PENYESUAIAN: "#c0392b",
+    mock_engine.LOLOS: HIJAU,
+    mock_engine.TELAAH: AMBER,
+    mock_engine.PENYESUAIAN: MERAH,
 }
 
 WARNA_KEPUTUSAN = {
-    "SETUJU": "#1b7f4b",
-    "SETUJU DENGAN SYARAT": "#b58900",
-    "PERLU PENYESUAIAN": "#c9721c",
-    "TOLAK": "#c0392b",
+    "SETUJU": HIJAU,
+    "SETUJU DENGAN SYARAT": AMBER,
+    "PERLU PENYESUAIAN": KORAL,
+    "TOLAK": MERAH,
 }
 
 
 def setup_halaman(judul: str, ikon: str = "•") -> None:
     st.set_page_config(page_title=f"{judul} · Commercial Credit Copilot", page_icon=ikon, layout="wide")
+    st.markdown(GAYA, unsafe_allow_html=True)
+
+
+def hero(nomor: str, judul: str, ringkas: str,
+         sorotan: list[tuple[str, str]] | None = None) -> None:
+    """Kepala halaman: satu blok warna yang menyatakan halaman ini soal apa.
+
+    Judul tidak lagi memakai `st.title` supaya tiap halaman dibuka dengan bidang
+    warna berbentuk sama — layar ruang komite dibaca dari jauh, dan blok berwarna
+    lebih cepat dikenali daripada teks polos.
+    """
+    isi = "".join(
+        f'<span class="hero-chip"><b>{nilai}</b> {label}</span>'
+        for label, nilai in (sorotan or [])
+    )
     st.markdown(
-        """
-        <style>
-          .block-container {padding-top: 2.2rem; padding-bottom: 3rem;}
-          div[data-testid="stMetricValue"] {font-size: 1.45rem;}
-          .badge {display:inline-block; padding:.18rem .6rem; border-radius:999px;
-                  font-size:.75rem; font-weight:600; letter-spacing:.02em;}
-          .kotak {border:1px solid rgba(128,128,128,.28); border-radius:.5rem;
-                  padding:.85rem 1rem; margin-bottom:.6rem;}
-          .gerbang {border-left:4px solid var(--w); border:1px solid rgba(128,128,128,.24);
-                    border-left-width:4px; border-radius:.4rem; padding:.7rem .9rem;
-                    margin-bottom:.55rem;}
-          .gerbang .aspek {font-weight:700; letter-spacing:.04em; text-transform:uppercase;
-                    font-size:.72rem; opacity:.85;}
-          .gerbang .pasal {font-size:.76rem; opacity:.65; font-family:ui-monospace,monospace;}
-          .tipis {opacity:.72; font-size:.85rem;}
-        </style>
-        """,
+        f'<div class="hero"><div class="hero-nomor">{nomor}</div>'
+        f'<div class="hero-teks"><h1>{judul}</h1><p>{ringkas}</p>'
+        f'<div class="hero-chips">{isi}</div></div></div>',
         unsafe_allow_html=True,
+    )
+
+
+def judul_bagian(teks: str, keterangan: str = "") -> None:
+    st.markdown(
+        f'<div class="bagian"><h3>{teks}</h3>'
+        + (f"<p>{keterangan}</p>" if keterangan else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def kartu(judul: str, isi: str, warna: str = AKSEN, ikon: str = "") -> str:
+    """Kartu berpita warna untuk temuan, pola, dan catatan pendek."""
+    return (
+        f'<div class="kartu" style="--w:{warna}">'
+        f'<div class="kartu-judul">{ikon} {judul}</div>'
+        f'<div class="kartu-isi">{isi}</div></div>'
     )
 
 
 def sidebar_status() -> None:
     with st.sidebar:
-        st.caption("AGENTIC AI COPILOT · KEPUTUSAN KREDIT KOMERSIAL")
-        st.info(
-            "**Mode demo — data dummy.**\n\n"
-            "Seluruh angka pada aplikasi ini sintetis dan tidak berasal dari data nasabah. "
-            "Lapisan FastAPI, model, dan graf belum tersambung.",
-            icon="🧪",
+        st.markdown(
+            '<div class="sidebar-merek">Commercial<br><b>Credit Copilot</b></div>',
+            unsafe_allow_html=True,
         )
         st.caption(
             f"Batas segmen: penjualan Rp {mock_engine.SEGMEN['penjualan_min'] / 1e9:.0f}–"
@@ -182,9 +313,9 @@ def plot_bmpk(eksposur_grup: float, tambahan: float = 0.0,
     sisa = max(batas - eksposur_grup - tambahan, 0.0)
     fig = go.Figure()
     potongan = [
-        ("Eksposur grup berjalan", eksposur_grup, "#2f6f9f"),
-        ("Usulan fasilitas ini", tambahan, "#c9721c"),
-        ("Sisa ruang BMPK", sisa, "rgba(130,130,130,.28)"),
+        ("Eksposur grup berjalan", eksposur_grup, PRIMER),
+        ("Usulan fasilitas ini", tambahan, AMBER),
+        ("Sisa ruang BMPK", sisa, "rgba(139,151,166,.28)"),
     ]
     for nama, nilai, warna in potongan:
         fig.add_trace(go.Bar(
@@ -192,14 +323,10 @@ def plot_bmpk(eksposur_grup: float, tambahan: float = 0.0,
             marker_color=warna,
             hovertemplate=f"<b>{nama}</b><br>Rp %{{x:.1f}} M<extra></extra>",
         ))
-    fig.add_vline(x=batas / 1e9, line_dash="dash", line_color="#c0392b",
+    fig.add_vline(x=batas / 1e9, line_dash="dash", line_color=MERAH,
                   annotation_text=f"Batas Rp {batas / 1e9:.0f} M", annotation_position="top right")
-    fig.update_layout(
-        barmode="stack", height=190, margin=dict(l=8, r=8, t=34, b=8),
-        xaxis_title="Rp miliar", yaxis_title=None,
-        legend=dict(orientation="h", yanchor="bottom", y=1.05, x=0),
-    )
-    return fig
+    fig.update_layout(barmode="stack", xaxis_title="Rp miliar", yaxis_title=None)
+    return gaya_plot(fig, 200)
 
 
 def plot_kontribusi(kontribusi, jumlah: int = 8) -> go.Figure:
@@ -210,19 +337,15 @@ def plot_kontribusi(kontribusi, jumlah: int = 8) -> go.Figure:
             x=[k.dampak for k in data],
             y=[k.fitur for k in data],
             orientation="h",
-            marker_color=["#c0392b" if k.dampak > 0 else "#2e8b6f" for k in data],
+            marker_color=[MERAH if k.dampak > 0 else AKSEN for k in data],
             customdata=[k.nilai for k in data],
             hovertemplate="<b>%{y}</b><br>Nilai: %{customdata}<br>Dampak: %{x:+.3f} log-odds<extra></extra>",
         )
     )
     fig.update_layout(
-        height=60 + 34 * len(data),
-        margin=dict(l=8, r=8, t=10, b=28),
-        xaxis_title="Dampak terhadap risiko (log-odds)",
-        yaxis_title=None,
-        showlegend=False,
+        xaxis_title="Dampak terhadap risiko (log-odds)", yaxis_title=None, showlegend=False,
     )
-    return fig
+    return gaya_plot(fig, 70 + 34 * len(data))
 
 
 def plot_kepemilikan(rantai: pd.DataFrame, entity_id: str) -> go.Figure:
@@ -238,8 +361,8 @@ def plot_kepemilikan(rantai: pd.DataFrame, entity_id: str) -> go.Figure:
             pad=18, thickness=16,
             line=dict(color="rgba(120,120,120,.5)", width=0.8),
             label=label,
-            color=["#2f6f9f"] + [
-                "#7b5ea7" if "Pemilik manfaat" in j else "#3b6b8f"
+            color=[PRIMER] + [
+                UNGU if "Pemilik manfaat" in j else "#3b6b8f"
                 for j in rantai["jenis"]
             ],
         ),
@@ -257,8 +380,8 @@ def plot_kepemilikan(rantai: pd.DataFrame, entity_id: str) -> go.Figure:
                           "%{customdata[2]}<extra></extra>",
         ),
     ))
-    fig.update_layout(height=300, margin=dict(l=8, r=8, t=18, b=8), font_size=11)
-    return fig
+    fig.update_layout(font_size=11)
+    return gaya_plot(fig, 320)
 
 
 def _tata_letak_graf(nodes: pd.DataFrame, edges: pd.DataFrame):
@@ -361,3 +484,128 @@ def plot_graf(nodes: pd.DataFrame, edges: pd.DataFrame, warnai: str = "tipe",
         hovermode="closest",
     )
     return fig
+
+
+# --------------------------------------------------------------------------
+# Visual model: meter PD, peta klaster, kurva recall
+# --------------------------------------------------------------------------
+def meter_pd(pd_nilai: float, cutoffs: dict, warna: str) -> go.Figure:
+    """Meter PD dengan pita ambang risiko dari artefak model.
+
+    Sumbu dipotong pada dua kali ambang q95 supaya pita risiko rendah tidak
+    tergencet menjadi garis rambut pada portofolio dengan PD kecil.
+    """
+    maksimum = max(float(cutoffs["q95"]) * 2, pd_nilai * 1.25, 0.02)
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=pd_nilai * 100,
+        number=dict(suffix="%", valueformat=".2f", font=dict(size=30, color=warna)),
+        gauge=dict(
+            axis=dict(range=[0, maksimum * 100], tickformat=".1f",
+                      tickcolor="rgba(29,95,168,.35)"),
+            bar=dict(color=warna, thickness=0.72),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            steps=[
+                dict(range=[0, cutoffs["q50"] * 100], color="rgba(31,138,95,.16)"),
+                dict(range=[cutoffs["q50"] * 100, cutoffs["q80"] * 100],
+                     color="rgba(224,160,42,.18)"),
+                dict(range=[cutoffs["q80"] * 100, cutoffs["q95"] * 100],
+                     color="rgba(226,104,63,.20)"),
+                dict(range=[cutoffs["q95"] * 100, maksimum * 100],
+                     color="rgba(204,59,82,.22)"),
+            ],
+            threshold=dict(line=dict(color=MERAH, width=3), thickness=0.8,
+                           value=cutoffs["q95"] * 100),
+        ),
+    ))
+    return gaya_plot(fig, 230)
+
+
+def plot_klaster(ruang, posisi=None, contoh: int = 1400) -> go.Figure:
+    """Peta klaster portofolio dengan posisi pengajuan baru di atasnya.
+
+    Latar diambil sebagai cuplikan acak portofolio supaya bidangnya terbaca
+    tanpa menggambar ribuan titik; pusat klaster dan pengajuan baru selalu
+    digambar penuh.
+    """
+    titik = ruang.titik
+    if len(titik) > contoh:
+        titik = titik.sample(contoh, random_state=11)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scattergl(
+        x=titik.loc[titik["default"] == 0, "x"],
+        y=titik.loc[titik["default"] == 0, "y"],
+        mode="markers", name="Portofolio non-default",
+        marker=dict(size=5, color="rgba(29,95,168,.30)", line=dict(width=0)),
+        hovertemplate="Non-default<extra></extra>",
+    ))
+    fig.add_trace(go.Scattergl(
+        x=titik.loc[titik["default"] == 1, "x"],
+        y=titik.loc[titik["default"] == 1, "y"],
+        mode="markers", name="Portofolio default",
+        marker=dict(size=8, color="rgba(204,59,82,.75)", symbol="x",
+                    line=dict(width=0)),
+        hovertemplate="Default<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=ruang.pusat["x"], y=ruang.pusat["y"], mode="markers+text",
+        name="Pusat klaster",
+        text=[f"{n}<br>{persen(t, 1)}" for n, t in
+              zip(ruang.pusat["nama"], ruang.pusat["tingkat_default"])],
+        textposition="top center",
+        textfont=dict(size=10, color=PRIMER_TUA),
+        marker=dict(size=17, color="#ffffff", symbol="circle",
+                    line=dict(width=2.6, color=PRIMER_TUA)),
+        hovertemplate="%{text}<extra></extra>",
+    ))
+    if posisi is not None:
+        fig.add_trace(go.Scatter(
+            x=[posisi.x], y=[posisi.y], mode="markers+text",
+            name="Pengajuan ini", text=["Pengajuan ini"], textposition="bottom center",
+            textfont=dict(size=12, color=AMBER),
+            marker=dict(size=22, color=AMBER, symbol="star",
+                        line=dict(width=1.6, color="#7a5406")),
+            hovertemplate=f"Pengajuan ini<br>Klaster terdekat: {posisi.nama}<extra></extra>",
+        ))
+    fig.update_layout(
+        xaxis_title=f"Komponen utama 1 ({ruang.varians[0]:.0%} ragam)",
+        yaxis_title=f"Komponen utama 2 ({ruang.varians[1]:.0%} ragam)",
+    )
+    return gaya_plot(fig, 470)
+
+
+def plot_jarak_klaster(jarak: pd.DataFrame) -> go.Figure:
+    """Jarak pengajuan ke tiap pusat klaster — makin pendek makin mirip."""
+    data = jarak.iloc[::-1]
+    warna = [
+        MERAH if t >= 0.05 else (AMBER if t >= 0.02 else AKSEN)
+        for t in data["tingkat_default"]
+    ]
+    fig = go.Figure(go.Bar(
+        x=data["jarak"], y=data["nama"], orientation="h", marker_color=warna,
+        text=[f"default {persen(t, 1)}" for t in data["tingkat_default"]],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Jarak %{x:.2f}<br>%{text}<extra></extra>",
+    ))
+    fig.update_layout(xaxis_title="Jarak ke pusat klaster (ruang fitur baku)",
+                      yaxis_title=None, showlegend=False)
+    return gaya_plot(fig, 240)
+
+
+def plot_recall_ambang(kurva: pd.DataFrame, judul: str = "") -> go.Figure:
+    """Recall, presisi, dan porsi alarm pada tiap ambang operasional."""
+    fig = go.Figure()
+    seri = [("recall", "Recall", AKSEN), ("presisi", "Presisi", PRIMER),
+            ("porsi_alarm", "Porsi berkas dialarmkan", AMBER)]
+    for kolom, nama, warna in seri:
+        fig.add_trace(go.Bar(
+            x=kurva["ambang"], y=kurva[kolom], name=nama, marker_color=warna,
+            text=[f"{v:.0%}" for v in kurva[kolom]], textposition="outside",
+            hovertemplate=f"<b>{nama}</b><br>%{{x}}: %{{y:.1%}}<extra></extra>",
+        ))
+    fig.update_layout(barmode="group", yaxis_tickformat=".0%",
+                      yaxis_title=None, xaxis_title="Ambang operasional",
+                      title=judul, yaxis_range=[0, 1.05])
+    return gaya_plot(fig, 360)

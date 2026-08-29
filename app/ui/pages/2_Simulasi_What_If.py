@@ -16,12 +16,19 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import dummy_data, mock_engine
+from lib import dummy_data, mock_engine, model_nyata as mn
 from lib.format import kali, miliar, persen
 from lib.tampilan import (
+    AKSEN,
+    AMBER,
+    MERAH,
+    PRIMER,
     badge_grade,
     badge_keputusan,
     kartu_hasil,
+    gaya_plot,
+    hero,
+    judul_bagian,
     kartu_rasio,
     panel_gerbang,
     plot_bmpk,
@@ -33,10 +40,14 @@ from lib.tampilan import (
 setup_halaman("Simulasi what-if", "🎚️")
 sidebar_status()
 
-st.title("2 · Simulasi what-if")
-st.caption(
-    "Ubah struktur fasilitas dan asumsi kinerja, lalu lihat dampaknya pada rating, limit grup, "
-    "pricing, covenant, dan expected loss."
+hero(
+    "02",
+    "Simulasi what-if",
+    "Sandbox perhitungan untuk relationship manager: naikkan atau turunkan plafon, tenor, "
+    "struktur agunan, dan asumsi kinerja, lalu lihat dampaknya pada rating, limit grup, "
+    "pricing, covenant, dan expected loss.",
+    [("skor", "PD model XGBoost"), ("pembanding", "kasus dari halaman 01"),
+     ("keluaran", "limit · pricing · covenant")],
 )
 
 dasar = st.session_state.get("copilot_fitur")
@@ -64,7 +75,8 @@ def _jepit(nilai: float, bawah: int, atas: int) -> int:
 
 
 # ---------------------------------------------------------------- kendali
-st.subheader("Parameter simulasi")
+judul_bagian("Parameter simulasi",
+             "Setiap geseran langsung dihitung ulang — tidak ada tombol jalankan.")
 c1, c2, c3 = st.columns(3)
 with c1:
     plafon = st.slider(
@@ -148,9 +160,36 @@ skenario = dict(
     indikasi_rangkap_jabatan=bool(dasar.get("indikasi_rangkap_jabatan", False)),
 )
 
+pakai_model = st.toggle(
+    "Pakai model PD dan LGD sungguhan", value=mn.status_lapisan_model()["pd"],
+    disabled=not mn.status_lapisan_model()["pd"],
+    help="Menyalakan artefak ml/models. Bila dimatikan, simulasi memakai mesin demo "
+         "deterministik supaya perilaku tiap rasio terlihat terpisah.",
+)
+
+
+def dengan_model(skenario_uji: dict) -> dict:
+    """Tempelkan PD dan LGD hasil model pada satu skenario.
+
+    Simulasi menyapu puluhan titik kurva, jadi SHAP dilewati di sini; reason
+    code cukup dihitung sekali untuk skenario yang sedang ditampilkan.
+    """
+    if not pakai_model:
+        return skenario_uji
+    hasil_model = mn.skor_pd(skenario_uji, dengan_kontribusi=False)
+    lgd_model = mn.skor_lgd(skenario_uji)
+    salinan = dict(skenario_uji)
+    if hasil_model is not None:
+        salinan["pd_model"] = hasil_model.pd_kalibrasi
+    if lgd_model is not None:
+        salinan["lgd_model"] = lgd_model
+    return salinan
+
+
+skenario = dengan_model(skenario)
 hasil = mock_engine.recommend_limit_pricing(skenario)
 gerbang = mock_engine.check_credit_policy(hasil, skenario)
-awal = mock_engine.recommend_limit_pricing(dasar)
+awal = mock_engine.recommend_limit_pricing(dengan_model(dict(dasar)))
 keputusan = mock_engine.keputusan_dari_hasil(hasil, gerbang)
 
 st.divider()
@@ -179,10 +218,10 @@ if hasil.catatan:
 st.divider()
 kol_gerbang, kol_bmpk = st.columns([3, 2])
 with kol_gerbang:
-    st.subheader("Gerbang kepatuhan skenario")
+    judul_bagian("Gerbang kepatuhan skenario")
     panel_gerbang(gerbang, ringkas=True)
 with kol_bmpk:
-    st.subheader("Posisi BMPK grup")
+    judul_bagian("Posisi BMPK grup")
     st.plotly_chart(plot_bmpk(hasil.eksposur_grup, hasil.limit_usulan), use_container_width=True)
     st.caption(
         f"Eksposur grup berjalan {miliar(hasil.eksposur_grup, 0)} · usulan fasilitas ini "
@@ -204,7 +243,8 @@ with kol_bmpk:
 
 # ---------------------------------------------------------------- kurva
 st.divider()
-st.subheader("Kurva sensitivitas")
+judul_bagian("Kurva sensitivitas",
+             "Satu variabel disapu, sisanya ditahan pada nilai skenario di atas.")
 pilih = st.radio(
     "Variabel yang disapu",
     ["Plafon", "Tenor", "Pertanggungan agunan", "EBITDA margin", "Konsentrasi pembeli"],
@@ -232,37 +272,42 @@ else:
     varian = [{**skenario, "buyer_concentration_hhi": float(v)} for v in sumbu]
     label, tampil = "Konsentrasi pembeli (HHI)", sumbu
 
-hasil_kurva = [mock_engine.recommend_limit_pricing(v) for v in varian]
+hasil_kurva = [mock_engine.recommend_limit_pricing(dengan_model(v)) for v in varian]
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=tampil, y=[h.pd * 100 for h in hasil_kurva],
-                         name="PD (%)", mode="lines+markers", line=dict(color="#c0392b")))
+                         name="PD (%)", mode="lines+markers", line=dict(color=MERAH, width=3)))
 fig.add_trace(go.Scatter(x=tampil, y=[h.pricing * 100 for h in hasil_kurva],
-                         name="Pricing (%)", mode="lines+markers", line=dict(color="#2f6f9f")))
+                         name="Pricing (%)", mode="lines+markers", line=dict(color=PRIMER, width=3)))
 fig.add_trace(go.Scatter(x=tampil, y=[h.expected_loss / 1e9 for h in hasil_kurva],
                          name="Expected loss (Rp miliar)", mode="lines+markers",
-                         line=dict(color="#c9721c"), yaxis="y2"))
+                         line=dict(color=AMBER, width=3), yaxis="y2"))
 fig.add_trace(go.Scatter(x=tampil, y=[h.limit_usulan / 1e9 for h in hasil_kurva],
                          name="Limit usulan (Rp miliar)", mode="lines",
-                         line=dict(color="#2e8b6f", dash="dot"), yaxis="y2"))
+                         line=dict(color=AKSEN, dash="dot", width=3), yaxis="y2"))
 fig.update_layout(
-    height=430, margin=dict(l=10, r=10, t=30, b=10),
     xaxis_title=label, yaxis_title="Persen",
     yaxis2=dict(title="Rp miliar", overlaying="y", side="right", showgrid=False),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(gaya_plot(fig, 430), use_container_width=True)
 
 st.divider()
-st.subheader("Reason code skenario berjalan")
-st.plotly_chart(plot_kontribusi(hasil.kontribusi), use_container_width=True)
+judul_bagian("Reason code skenario berjalan")
+kontribusi = hasil.kontribusi
+if pakai_model:
+    hasil_model = mn.skor_pd(skenario)
+    if hasil_model is not None and hasil_model.kontribusi:
+        kontribusi = hasil_model.kontribusi
+        st.caption("Nilai SHAP dari model PD untuk kombinasi parameter yang sedang dipilih.")
+st.plotly_chart(plot_kontribusi(kontribusi), use_container_width=True)
 
 with st.expander("Bandingkan struktur agunan pada plafon yang sama"):
     baris = []
     for agunan in ["Tanpa agunan (clean basis)", "Piutang dagang (fidusia)",
                    "Mesin dan peralatan", "Tanah dan bangunan pabrik (SHM/SHGB)"]:
-        h = mock_engine.recommend_limit_pricing({**skenario, "jenis_agunan": agunan})
-        g = mock_engine.check_credit_policy(h, {**skenario, "jenis_agunan": agunan})
+        varian_agunan = dengan_model({**skenario, "jenis_agunan": agunan})
+        h = mock_engine.recommend_limit_pricing(varian_agunan)
+        g = mock_engine.check_credit_policy(h, varian_agunan)
         baris.append({
             "Struktur agunan": agunan,
             "PD": persen(h.pd),

@@ -20,6 +20,8 @@ from lib.format import kali, miliar, persen, rupiah
 from lib.tampilan import (
     PALET_TIPE,
     badge,
+    hero,
+    judul_bagian,
     badge_grade,
     plot_bmpk,
     plot_graf,
@@ -31,10 +33,14 @@ from lib.tampilan import (
 setup_halaman("Struktur grup dan jaringan", "🕸️")
 sidebar_status()
 
-st.title("3 · Struktur grup dan jaringan")
-st.caption(
+hero(
+    "03",
+    "Struktur grup dan jaringan",
     "Relasi kepemilikan, pengendalian, rangkap jabatan pengurus, pemasok dan pembeli utama, "
-    "serta penjaminan silang antar afiliasi."
+    "serta penjaminan silang antar afiliasi. Setiap visual graf selalu didampingi tabel "
+    "peringkat: graf memberi kesan, tabel memberi angka yang dapat dikutip komite.",
+    [("kedalaman", "2 hop"), ("penelusuran", "sampai pemilik manfaat"),
+     ("keluaran", "pola anomali struktur")],
 )
 
 df = dummy_data.daftar_pengajuan()
@@ -109,7 +115,7 @@ with kanan:
 
 st.divider()
 
-st.subheader("Penelusuran kepemilikan sampai pemilik manfaat akhir")
+judul_bagian("Penelusuran kepemilikan sampai pemilik manfaat akhir")
 st.caption(
     "Relasi `mengendalikan` diturunkan dari penelusuran kepemilikan berlapis. Entitas antara "
     "tanpa aktivitas usaha ditandai karena menjadi pemicu penelaahan APU-PPT."
@@ -140,7 +146,7 @@ with kt:
 
 st.divider()
 
-st.subheader("Eksposur grup usaha terhadap BMPK")
+judul_bagian("Eksposur grup usaha terhadap BMPK")
 grup = dummy_data.daftar_grup()
 baris_grup = grup.loc[grup["grup_usaha"] == baris["grup_usaha"]]
 baris_grup = baris_grup.iloc[0] if len(baris_grup) else grup.iloc[0]

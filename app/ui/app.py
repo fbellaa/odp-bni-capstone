@@ -1,11 +1,12 @@
-"""Titik masuk aplikasi demo Streamlit — segmen kredit komersial.
+"""Titik masuk aplikasi Streamlit — segmen kredit komersial.
 
 Jalankan dari folder app/ui:
 
     streamlit run app.py
 
-Susunan halaman mengikuti proposal bagian 9.3. Seluruh data masih dummy;
-lihat lib/dummy_data.py untuk titik sambung ke FastAPI nanti.
+Ringkasan portofolio pada halaman ini dibaca dari lapisan emas
+(`data/gold/*.parquet`), bukan dari data karangan. Halaman-halaman berikutnya
+menyambungnya dengan artefak model pada `ml/models`.
 """
 from __future__ import annotations
 
@@ -14,15 +15,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from lib import dummy_data, mock_engine
-from lib.format import miliar, persen, rupiah
+from lib import model_nyata as mn
+from lib.format import cacah, miliar, persen, rupiah
 from lib.tampilan import (
-    JUDUL_APLIKASI,
-    badge,
-    plot_bmpk,
+    AKSEN,
+    AMBER,
+    DERET_KATEGORI,
+    KORAL,
+    MERAH,
+    PRIMER,
+    UNGU,
+    gaya_plot,
+    hero,
+    judul_bagian,
     setup_halaman,
     sidebar_status,
 )
@@ -30,98 +39,121 @@ from lib.tampilan import (
 setup_halaman("Beranda", "🏦")
 sidebar_status()
 
-st.title(JUDUL_APLIKASI)
-st.caption(
+abt = mn.gold("abt_pd")
+grup = mn.gold("dim_grup_usaha")
+pengajuan = mn.gold("fact_pengajuan")
+status = mn.status_lapisan_model()
+
+hero(
+    "🏦",
+    "Agentic AI Copilot untuk Keputusan Kredit Komersial",
     "Sistem pendukung keputusan kredit segmen komersial — debitur menengah dengan penjualan "
     "tahunan Rp 30 sampai 300 miliar. Memadukan data engineering, pemodelan risiko, analisis "
-    "jaringan grup usaha dan rantai pasok, serta lapisan generative AI sebagai orkestrator model."
+    "jaringan grup usaha, serta lapisan generative AI sebagai orkestrator model.",
+    [
+        ("model produksi", "PD · EWS · LGD"),
+        ("baris ABT PD", cacah(status["baris_abt"]) if status["gold"] else "—"),
+        ("lapisan", "Bronze → Silver → Gold"),
+        ("keputusan", "Sistem menyarankan, komite memutus"),
+    ],
 )
 
-st.markdown(
-    " ".join([
-        badge("RISK ASSESSMENT", "#2f6f9f"),
-        badge("GRAPH ANALYTICS", "#2e8b6f"),
-        badge("DECISION SUPPORT", "#7b5ea7"),
-        badge("GROUP EXPOSURE", "#c9721c"),
-        badge("PERSONALIZATION", "#8e5572"),
-    ]),
-    unsafe_allow_html=True,
-)
+if abt is None:
+    st.error(
+        "Lapisan emas belum dibangun. Jalankan pipeline lebih dulu, atau salin "
+        "`data/gold/*.parquet` ke tempatnya.",
+        icon="⛔",
+    )
+    st.stop()
 
-st.warning(
-    "Aplikasi ini berjalan dengan **data dummy**. Model PD/LGD, lapisan graf, dan agen "
-    "belum tersambung — seluruh angka dihitung oleh `lib/mock_engine.py` secara deterministik "
-    "supaya interaksi demo tetap responsif.",
-    icon="⚠️",
-)
+# ------------------------------------------------------------------ ringkas
+judul_bagian("Ringkasan portofolio pada lapisan emas",
+             "Angka dihitung langsung dari tabel emas setiap kali halaman dibuka.")
 
-df = dummy_data.daftar_pengajuan()
-grup = dummy_data.daftar_grup()
-
-st.subheader("Ringkasan portofolio komersial demo")
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Pengajuan pada pipeline", f"{len(df):,}".replace(",", "."))
-k2.metric("Total plafon diminta", rupiah(df["plafon_diminta"].sum(), singkat=True))
-k3.metric("Rata-rata plafon", miliar(df["plafon_diminta"].mean(), 0))
-k4.metric("Rata-rata PD", persen(df["pd"].mean()))
-k5.metric("Expected loss portofolio", rupiah(df["expected_loss"].sum(), singkat=True))
+k1.metric("Pengajuan pada ABT PD", cacah(len(abt)))
+k2.metric("Total plafon diminta", rupiah(abt["app_plafon_diminta_rp"].sum(), singkat=True))
+k3.metric("Rata-rata plafon", miliar(abt["app_plafon_diminta_rp"].mean(), 0))
+k4.metric("Tingkat default 12 bulan", persen(abt["y_default_12bln"].mean()),
+          help="Kejadian pada data berlabel — dasar mengapa evaluasi model berpusat pada recall.")
+k5.metric("Grup usaha terdaftar", cacah(len(grup)) if grup is not None else "—")
 
-kiri, kanan = st.columns([3, 2])
+kiri, kanan = st.columns([3, 2], gap="large")
 
 with kiri:
-    st.markdown("**Sebaran rating internal pada pipeline**")
-    urutan = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
+    st.markdown("**Sebaran rating internal pada portofolio**")
+    urutan = [r for r in mn.URUTAN_RATING if r in set(abt["app_rating_internal"])]
     hitung = (
-        df["grade"].value_counts().reindex(urutan).fillna(0).reset_index()
+        abt.groupby("app_rating_internal")
+        .agg(jumlah=("application_id", "size"), tingkat_default=("y_default_12bln", "mean"))
+        .reindex(urutan).reset_index()
     )
-    hitung.columns = ["grade", "jumlah"]
     fig = px.bar(
-        hitung, x="grade", y="jumlah", color="grade",
-        color_discrete_map=mock_engine.WARNA_GRADE,
-        labels={"grade": "Rating internal", "jumlah": "Jumlah pengajuan"},
+        hitung, x="app_rating_internal", y="jumlah", color="tingkat_default",
+        color_continuous_scale=[[0, AKSEN], [0.5, AMBER], [1, MERAH]],
+        labels={"app_rating_internal": "Rating internal", "jumlah": "Jumlah pengajuan",
+                "tingkat_default": "Tingkat default"},
     )
-    fig.update_layout(height=290, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(coloraxis_colorbar=dict(tickformat=".0%", title=None))
+    st.plotly_chart(gaya_plot(fig, 330), use_container_width=True)
+    st.caption("Warna batang menyatakan tingkat default historis kelas rating tersebut.")
 
 with kanan:
-    st.markdown("**Grup usaha dengan ruang BMPK paling tipis**")
-    teratas = grup.iloc[0]
-    st.plotly_chart(
-        plot_bmpk(teratas["eksposur_grup"], 0.0),
-        use_container_width=True,
-    )
-    st.caption(
-        f"{teratas['grup_usaha']} — {int(teratas['jumlah_entitas'])} entitas, "
-        f"{persen(teratas['porsi_bmpk'], 0)} dari batas terpakai."
-    )
+    st.markdown("**Konsentrasi eksposur grup usaha**")
+    if grup is not None and "penjualan_grup_rp" in grup:
+        teratas = grup.nlargest(8, "penjualan_grup_rp").sort_values("penjualan_grup_rp")
+        fig2 = px.bar(
+            teratas, x="penjualan_grup_rp", y="nama_grup", orientation="h",
+            labels={"penjualan_grup_rp": "Penjualan grup (Rp)", "nama_grup": ""},
+        )
+        fig2.update_traces(marker_color=PRIMER)
+        st.plotly_chart(gaya_plot(fig2, 330), use_container_width=True)
+        st.caption(
+            cacah(len(grup))
+            + " grup usaha terbentuk dari resolusi kepemilikan dan pengendalian pada lapisan graf."
+        )
+    else:
+        st.info("Tabel `dim_grup_usaha` belum tersedia.", icon="ℹ️")
 
-st.divider()
+if pengajuan is not None and "keputusan" in pengajuan:
+    st.markdown("**Keputusan historis pada berkas pengajuan**")
+    ringkas = pengajuan["keputusan"].value_counts().reset_index()
+    ringkas.columns = ["keputusan", "jumlah"]
+    fig3 = px.bar(ringkas, x="jumlah", y="keputusan", orientation="h",
+                  color="keputusan", color_discrete_sequence=DERET_KATEGORI,
+                  labels={"jumlah": "Jumlah berkas", "keputusan": ""})
+    fig3.update_layout(showlegend=False)
+    st.plotly_chart(gaya_plot(fig3, 240), use_container_width=True)
 
-st.subheader("Peta halaman")
-kiri, kanan = st.columns(2)
+# -------------------------------------------------------------- peta halaman
+judul_bagian("Peta halaman", "Empat halaman kerja, satu halaman eksekutif.")
+
 halaman = [
-    ("1 · Copilot pengajuan",
-     "Kolom teks bebas, jejak langkah agen yang muncul bertahap, gerbang kepatuhan, hasil skor "
-     "dan reason code, tombol unduh credit memo."),
-    ("2 · Simulasi what-if",
-     "Slider plafon, tenor, struktur agunan, dan asumsi EBITDA; skor, pricing, covenant, dan "
-     "ekspektasi kerugian diperbarui seketika."),
-    ("3 · Struktur grup dan jaringan",
-     "Subgraf ego dua hop, penelusuran kepemilikan sampai pemilik manfaat, penyorotan klaster, "
-     "panel pola anomali yang terdeteksi."),
-    ("4 · Portofolio dan eksposur grup",
-     "Konsentrasi eksposur per grup dan sektor, posisi terhadap BMPK, uji tekanan simpul kritis, "
-     "tabel counterparty penting."),
-    ("5 · Kesehatan model",
-     "Metrik berjalan, indeks stabilitas populasi, hasil uji ablasi fitur graf, evaluasi agen, "
-     "kelulusan uji kualitas data."),
-    ("6 · Dashboard BI",
-     "Metabase disematkan sebagai iframe untuk lapisan eksekutif."),
+    ("01 · Copilot pengajuan",
+     "Chat relationship manager plus unggahan PDF laporan keuangan, data kepemilikan, dan "
+     "rekening koran. Copilot membaca berkas, memanggil tool, lalu mengeluarkan PD, LGD, "
+     "posisi klaster, gerbang kepatuhan, dan draft credit memo.", PRIMER, "🤖"),
+    ("02 · Simulasi what-if",
+     "Sandbox perhitungan: plafon, tenor, struktur agunan, dan asumsi EBITDA digeser, lalu "
+     "skor, pricing, covenant, dan expected loss diperbarui seketika.", AKSEN, "🎚️"),
+    ("03 · Struktur grup dan jaringan",
+     "Subgraf ego dua hop, penelusuran kepemilikan sampai pemilik manfaat akhir, penyorotan "
+     "klaster, dan panel pola anomali struktur.", UNGU, "🕸️"),
+    ("04 · Kesehatan model",
+     "Metrik PD, EWS, dan LGD dihitung ulang dari artefak model di atas data emas, dengan "
+     "recall sebagai ukuran utama; ditambah PSI dan hasil judge arena Qwen 14B.", AMBER, "🩺"),
+    ("05 · Dashboard BI",
+     "Metabase disematkan untuk lapisan eksekutif — masih dalam pembangunan.", KORAL, "📈"),
 ]
-for i, (judul, isi) in enumerate(halaman):
+kiri, kanan = st.columns(2)
+for i, (judul, isi, warna, ikon) in enumerate(halaman):
     kolom = kiri if i % 2 == 0 else kanan
     with kolom:
-        st.markdown(f'<div class="kotak"><b>{judul}</b><br><span style="opacity:.75">{isi}</span></div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="kartu" style="--w:{warna}">'
+            f'<div class="kartu-judul">{ikon} {judul}</div>'
+            f'<div class="kartu-isi">{isi}</div></div>',
+            unsafe_allow_html=True,
+        )
 
-st.info("Pilih halaman melalui menu di sisi kiri untuk memulai demo.", icon="👈")
+st.info("Pilih halaman melalui menu di sisi kiri untuk memulai.", icon="👈")
