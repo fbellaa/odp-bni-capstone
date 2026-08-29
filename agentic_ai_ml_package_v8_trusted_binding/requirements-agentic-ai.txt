@@ -1,0 +1,18 @@
+# Agentic AI runtime
+requests>=2.32,<3
+pydantic>=2.8,<3
+python-dotenv>=1.0,<2
+pytest>=8,<9
+
+# Document extraction
+pypdf>=5.0,<7.0
+python-docx>=1.1,<2.0
+pymupdf>=1.24,<2
+pillow>=10,<12
+pytesseract>=0.3.13,<1
+
+# Optional evaluation
+deepeval==4.1.8
+
+# DeepEval local Ollama judge
+ollama>=0.4,<1
