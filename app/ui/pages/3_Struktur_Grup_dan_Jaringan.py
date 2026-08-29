@@ -1,9 +1,26 @@
-"""Halaman 3 — Struktur grup dan jaringan.
+"""Halaman 3 — Hubungan pengaju dengan nasabah eksisting.
 
-Subgraf ego dua hop, penelusuran kepemilikan sampai pemilik manfaat akhir,
-penyorotan klaster, dan panel pola anomali yang terdeteksi. Setiap visual graf
-selalu didampingi tabel peringkat: graf memberi kesan, tabel memberi angka yang
-dapat dikutip.
+Halaman ini menjawab satu pertanyaan, bukan menyediakan penjelajahan graf:
+**calon pengaju ini terhubung ke debitur mana di buku kita, lewat apa, dan apa
+konsekuensinya.** Jawabannya punya akibat konkret - penggabungan BMPK,
+penelaahan pihak terafiliasi (KKK-13.6), dan penularan gagal bayar.
+
+DUA MODE, karena sumber relasinya memang berbeda:
+
+    Calon pengaju     belum punya satu pun edge di GOLD_GRAPH_EDGES. Relasinya
+                      dicari lewat `pipelines.graph.resolusi.telusuri_afiliasi()`
+                      dari tiga berkas CDD: akta, domisili usaha, rekening koran.
+
+    Nasabah eksisting sudah menjadi simpul di graf. Relasinya dibaca langsung
+                      sebagai subgraf ego dari GOLD_GRAPH_NODES/EDGES.
+
+Yang WAJIB dijaga di layar: "tidak ada kecocokan" dan "dokumen tidak disertakan"
+tidak boleh sama-sama tampil sebagai "tidak ada afiliasi". Yang pertama temuan,
+yang kedua batas penelaahan - dan menyamakannya mengubah *tidak tahu* menjadi
+*aman*. Karena itu status tiap jalur selalu ditampilkan terpisah.
+
+Setiap visual graf tetap didampingi tabel: graf memberi kesan, tabel memberi
+angka yang dapat dikutip komite.
 """
 from __future__ import annotations
 
@@ -15,14 +32,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 import streamlit as st
 
-from lib import dummy_data, mock_engine
-from lib.format import kali, miliar, persen, rupiah
+from lib import graf_nyata as gn
+from lib.format import miliar, persen, rupiah
 from lib.tampilan import (
     PALET_TIPE,
     badge,
     hero,
     judul_bagian,
-    badge_grade,
     plot_bmpk,
     plot_graf,
     plot_kepemilikan,
@@ -30,213 +46,499 @@ from lib.tampilan import (
     sidebar_status,
 )
 
-setup_halaman("Struktur grup dan jaringan", "🕸️")
+setup_halaman("Hubungan pengaju dan nasabah eksisting")
 sidebar_status()
 
 hero(
     "03",
-    "Struktur grup dan jaringan",
-    "Relasi kepemilikan, pengendalian, rangkap jabatan pengurus, pemasok dan pembeli utama, "
-    "serta penjaminan silang antar afiliasi. Setiap visual graf selalu didampingi tabel "
-    "peringkat: graf memberi kesan, tabel memberi angka yang dapat dikutip komite.",
-    [("kedalaman", "2 hop"), ("penelusuran", "sampai pemilik manfaat"),
-     ("keluaran", "pola anomali struktur")],
+    "Hubungan pengaju dengan nasabah eksisting",
+    "Calon pengaju dicocokkan ke debitur yang sudah ada di buku lewat akta, domisili usaha, "
+    "dan rekening koran — tiga berkas yang memang wajib dikumpulkan saat CDD. Keluarannya "
+    "daftar yang layak diperiksa analis, lengkap dengan alasan tiap barisnya, bukan skor risiko.",
+    [("jalur pencocokan", "3"), ("dasar", "identitas & transaksi"),
+     ("keluaran", "kandidat afiliasi + bukti")],
 )
 
-df = dummy_data.daftar_pengajuan()
+# ---------------------------------------------------------------- penjaga data
+if not gn.tersedia():
+    st.error(
+        "Tabel graf belum ada di `data/gold`. Jalankan pipeline lebih dulu:\n\n"
+        "```\npython -m pipelines.flows.main_flow\n```",
+    )
+    hilang = gn.tabel_hilang()
+    if hilang:
+        st.caption("Tidak ditemukan: " + ", ".join(f"`{t}`" for t in hilang))
+    st.stop()
 
-c1, c2, c3, c4 = st.columns([2.4, 1, 1, 1])
-entity_id = c1.selectbox(
-    "Badan hukum pusat",
-    options=df["application_id"].tolist(),
-    format_func=lambda a: f"{a} — {df.loc[df['application_id'] == a, 'nama_debitur'].iat[0]}",
-)
-hops = c2.select_slider("Kedalaman (hop)", [1, 2, 3], value=2)
-batas = c3.number_input("Batas simpul", 20, 200, 60, step=10,
-                        help="Subgraf dipangkas berdasarkan bobot edge sebelum dikirim ke antarmuka.")
-warnai = c4.selectbox("Warna simpul", ["tipe", "komunitas"])
+info = gn.ringkas_ketersediaan()
+snapshots = gn.snapshot_tersedia()
+snapshot_terbaru = snapshots[0] if snapshots else pd.Timestamp.today().normalize()
 
-nodes, edges = dummy_data.subgraf_ego(entity_id, hops=int(hops), batas_simpul=int(batas))
-network_risk = dummy_data.score_network_risk(entity_id)
-rantai = dummy_data.penelusuran_kepemilikan(entity_id)
-baris = df.loc[df["application_id"] == entity_id].iloc[0]
-
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Simpul pada subgraf", len(nodes))
-m2.metric("Relasi pada subgraf", len(edges))
-m3.metric("Skor risiko jaringan", f"{network_risk['skor']:.0f} / 100")
-m4.metric("Lapis kepemilikan", len(rantai),
-          help="Jumlah lapisan sampai pemilik manfaat akhir.")
-m5.metric("Klaster", f"#{int(nodes.loc[0, 'community_id'])}")
-
-kiri, kanan = st.columns([3, 2])
-
-with kiri:
-    st.plotly_chart(plot_graf(nodes, edges, warnai=warnai, sorot=entity_id), use_container_width=True)
-    if warnai == "tipe":
-        st.markdown(" ".join(badge(t, w) for t, w in PALET_TIPE.items()), unsafe_allow_html=True)
-    else:
-        st.caption("Warna menandai klaster hasil Louvain pada snapshot graf bulan sebelumnya.")
+with st.expander("Data yang sedang dibaca", expanded=False):
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Simpul", f"{info['jumlah_simpul']:,}".replace(",", "."))
+    d2.metric("Relasi", f"{info['jumlah_edge']:,}".replace(",", "."))
+    d3.metric("Snapshot bulanan", info["jumlah_snapshot"])
     st.caption(
-        "Garis tebal menandai relasi struktural — kepemilikan, pengendalian, rangkap jabatan, "
-        "penjaminan silang, dan atribut yang dipakai bersama. Garis tipis menandai relasi dagang."
+        "Simpul menurut tipe: "
+        + " · ".join(f"{k} {v:,}".replace(",", ".") for k, v in info["per_tipe_simpul"].items())
     )
-
-with kanan:
-    st.markdown("**Pola anomali struktur yang terdeteksi**")
-    if network_risk["pola"]:
-        for p in network_risk["pola"]:
-            st.markdown(
-                f'<div class="kotak"><b>{p["deskripsi"]}</b><br>'
-                f'<span style="opacity:.7">Bukti: {p["bukti"]}</span></div>',
-                unsafe_allow_html=True,
-            )
-    else:
-        st.success("Tidak ada pola anomali yang terpicu pada subgraf ini.", icon="✅")
-
-    st.markdown(f"**Profil badan hukum pusat** &nbsp; {badge_grade(baris['grade'])}",
-                unsafe_allow_html=True)
-    st.dataframe(
-        pd.DataFrame({
-            "Item": ["Nama debitur", "Grup usaha", "Sektor", "Wilayah", "Jenis fasilitas",
-                     "Penjualan tahunan", "Plafon diminta", "DER", "PD", "Kolektibilitas",
-                     "Posisi covenant"],
-            "Nilai": [
-                baris["nama_debitur"], baris["grup_usaha"], baris["sektor"], baris["wilayah"],
-                baris["jenis_fasilitas"],
-                rupiah(baris["penjualan_tahunan"], singkat=True),
-                rupiah(baris["plafon_diminta"], singkat=True),
-                kali(baris["der"]), persen(baris["pd"]),
-                baris["kolektibilitas"], baris["posisi_covenant"],
-            ],
-        }),
-        use_container_width=True, hide_index=True,
+    st.caption(
+        "Relasi menurut tipe: "
+        + " · ".join(f"{k} {v:,}".replace(",", ".") for k, v in info["per_tipe_relasi"].items())
     )
+    if info["tabel_hilang"]:
+        st.warning("Tabel pelengkap tidak ada: " + ", ".join(info["tabel_hilang"]))
 
-st.divider()
-
-judul_bagian("Penelusuran kepemilikan sampai pemilik manfaat akhir")
-st.caption(
-    "Relasi `mengendalikan` diturunkan dari penelusuran kepemilikan berlapis. Entitas antara "
-    "tanpa aktivitas usaha ditandai karena menjadi pemicu penelaahan APU-PPT."
+tab_calon, tab_eksisting = st.tabs(
+    ["Calon pengaju — pencocokan ke buku", "Nasabah eksisting — subgraf ego"]
 )
-ko, kt = st.columns([3, 2])
-with ko:
-    st.plotly_chart(plot_kepemilikan(rantai, entity_id), use_container_width=True)
-with kt:
-    tampil = rantai.copy()
-    tampil["porsi_langsung"] = tampil["porsi_langsung"].map(lambda v: persen(v, 1))
-    tampil["porsi_efektif"] = tampil["porsi_efektif"].map(lambda v: persen(v, 1))
-    st.dataframe(
-        tampil.rename(columns={
-            "tingkat": "Lapis", "pemilik": "Pemilik", "jenis": "Jenis",
-            "dimiliki": "Memiliki", "porsi_langsung": "Porsi langsung",
-            "porsi_efektif": "Porsi efektif", "aktivitas_usaha": "Aktivitas usaha",
-            "yurisdiksi": "Yurisdiksi",
-        }),
-        use_container_width=True, hide_index=True,
+
+# ==========================================================================
+# MODE 1 — calon pengaju
+# ==========================================================================
+with tab_calon:
+    dokumen = st.session_state.get("copilot_dokumen")
+    entitas = st.session_state.get("copilot_entitas") or {}
+
+    # Bahan pencocokan diambil dari berkas yang sudah dibaca halaman 1.
+    # `BerkasPengajuan.argumen_resolusi()` sengaja dibentuk sama dengan tanda
+    # tangan `telusuri_afiliasi()`, jadi tidak ada penyesuaian di sini.
+    alamat_awal, pengurus_awal, rekening_awal = "", [], []
+    asal = "isian manual"
+    if dokumen is not None:
+        berkas = getattr(dokumen, "berkas", None)
+        if berkas is not None and hasattr(berkas, "argumen_resolusi"):
+            arg = berkas.argumen_resolusi()
+            alamat_awal = str(arg.get("alamat_operasional") or "")
+            pengurus_awal = list(arg.get("nama_pengurus") or [])
+            rekening_awal = list(arg.get("rekening_lawan") or [])
+            asal = "berkas pengajuan (jalur pembacaan LLM)"
+        elif getattr(dokumen, "pengurus", None):
+            # Jalur pola menyimpan "Nama — Jabatan"; yang dipakai hanya namanya.
+            pengurus_awal = [
+                str(p).split("—")[0].split(" - ")[0].strip() for p in dokumen.pengurus
+            ]
+            asal = "berkas pengajuan (jalur pembacaan pola)"
+
+    nama_calon = str(entitas.get("nama_debitur") or "Calon pengaju")
+
+    if dokumen is None:
+        st.info(
+            "Belum ada berkas pengajuan yang dibaca di halaman 1. Isi bahan pencocokan "
+            "di bawah untuk mencoba, atau jalankan Copilot Pengajuan lebih dulu.",
+        )
+    else:
+        st.caption(f"Bahan pencocokan diambil dari **{asal}** untuk **{nama_calon}**.")
+
+    with st.expander("Bahan pencocokan", expanded=dokumen is None):
+        f1, f2 = st.columns([3, 2])
+        alamat = f1.text_input(
+            "Alamat operasional (dokumen domisili usaha)",
+            value=alamat_awal,
+            placeholder="Jalan …, Kota …",
+        )
+        tanggal = f2.date_input(
+            "Tanggal penilaian",
+            value=snapshot_terbaru.date(),
+            help="Pencocokan hanya melihat relasi yang sudah berlaku dan gagal bayar "
+                 "yang sudah terjadi pada tanggal ini.",
+        )
+        g1, g2 = st.columns(2)
+        teks_pengurus = g1.text_area(
+            "Nama pengurus / pemegang saham (akta) — satu per baris",
+            value="\n".join(pengurus_awal), height=120,
+        )
+        teks_rekening = g2.text_area(
+            "Rekening lawan transaksi (rekening koran) — satu per baris",
+            value="\n".join(rekening_awal), height=120,
+        )
+        nama_calon = st.text_input("Nama calon pengaju", value=nama_calon)
+
+    pengurus = tuple(b.strip() for b in teks_pengurus.splitlines() if b.strip())
+    rekening = tuple(b.strip() for b in teks_rekening.splitlines() if b.strip())
+
+    hasil = gn.resolusi_calon(
+        pd.Timestamp(tanggal),
+        alamat_operasional=alamat.strip() or None,
+        nama_pengurus=pengurus,
+        rekening_lawan=rekening,
     )
-    penampung = rantai[rantai["aktivitas_usaha"].str.startswith("Tidak ada")]
-    if len(penampung):
+
+    if hasil.galat:
+        st.error(f"Pencocokan gagal dijalankan: {hasil.galat}")
+        st.stop()
+
+    # ---- status tiap jalur. Inilah yang membedakan "tidak tahu" dari "aman".
+    judul_bagian("Jalur pencocokan yang terpakai")
+    lencana = []
+    for j in hasil.jalur:
+        warna = "#1b7f4b" if j["dipakai"] else (
+            "#b58900" if "tidak disertakan" in j["keterangan"] else "#666666"
+        )
+        lencana.append(badge(f"{j['nama']} — {j['keterangan']}", warna))
+    st.markdown(" ".join(lencana), unsafe_allow_html=True)
+
+    # Jalur yang benar-benar dijalankan - entah ketemu atau tidak. Jalur yang
+    # dokumennya tidak dilampirkan TIDAK termasuk: ia belum diperiksa.
+    diperiksa = [j for j in hasil.jalur if "tidak disertakan" not in j["keterangan"]]
+    tidak_disertakan = [j for j in hasil.jalur if "tidak disertakan" in j["keterangan"]]
+    if tidak_disertakan:
         st.warning(
-            f"{len(penampung)} entitas antara tidak memiliki aktivitas usaha — "
-            "penelaahan lanjutan atas struktur kepemilikan berlapis wajib dilakukan.",
-            icon="🔎",
+            "Batas penelaahan: "
+            + ", ".join(j["nama"].lower() for j in tidak_disertakan)
+            + " tidak disertakan, sehingga jalur itu belum diperiksa. "
+            "Hasil di bawah bukan pernyataan bahwa tidak ada afiliasi.",
         )
 
-st.divider()
+    # ---- vonis kebijakan
+    if hasil.perlu_telaah:
+        st.error(
+            f"**Penelaahan pihak terafiliasi diperlukan (KKK-13.6)** — {hasil.jumlah_kandidat} "
+            "debitur eksisting terkait. Ambang ini aturan kebijakan, bukan keluaran model.",
+        )
+    elif hasil.jumlah_kandidat:
+        st.info(
+            f"{hasil.jumlah_kandidat} debitur terkait ditemukan, di bawah ambang penelaahan "
+            "wajib. Tetap perlu dilihat untuk penggabungan BMPK.",
+        )
+    elif diperiksa:
+        st.success(
+            "Tidak ada kecocokan pada jalur yang diperiksa: "
+            + ", ".join(j["nama"].lower() for j in diperiksa) + ".",
+        )
+    else:
+        # Nol jalur diperiksa bukan hasil bersih. Menampilkannya hijau adalah
+        # persis kekeliruan yang halaman ini ada untuk mencegahnya.
+        st.warning(
+            "Belum ada bahan pencocokan yang bisa diperiksa. Lampirkan akta, dokumen "
+            "domisili, atau rekening koran — status di atas belum menyatakan apa pun "
+            "tentang ada-tidaknya afiliasi.",
+        )
 
-judul_bagian("Eksposur grup usaha terhadap BMPK")
-grup = dummy_data.daftar_grup()
-baris_grup = grup.loc[grup["grup_usaha"] == baris["grup_usaha"]]
-baris_grup = baris_grup.iloc[0] if len(baris_grup) else grup.iloc[0]
+    if hasil.jumlah_kandidat:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Debitur terkait", hasil.jumlah_kandidat)
+        m2.metric("Sudah gagal bayar", hasil.ada_gagal_bayar,
+                  help="Gagal bayar yang tanggalnya sudah lewat pada tanggal penilaian.")
+        m3.metric("Eksposur terkait", miliar(float(hasil.tabel["eksposur_rp"].sum()), 0))
+        m4.metric("Bukti berupa hub", int(hasil.tabel["hub"].sum()),
+                  help=f"Objek bukti yang menempel pada ≥ {gn.AMBANG_HUB} debitur — "
+                       "nominee atau alamat bersama massal, bukan afiliasi spesifik.")
 
-g1, g2 = st.columns([2, 3])
-with g1:
-    st.metric("Grup usaha", baris_grup["grup_usaha"])
-    st.metric("Entitas dalam grup", int(baris_grup["jumlah_entitas"]),
-              delta=f"{int(baris_grup['entitas_debitur'])} sudah menjadi debitur", delta_color="off")
-    st.metric("Eksposur gabungan", miliar(baris_grup["eksposur_grup"], 0),
-              delta=f"{persen(baris_grup['porsi_bmpk'], 0)} dari batas", delta_color="off")
-with g2:
-    st.plotly_chart(plot_bmpk(baris_grup["eksposur_grup"], baris["limit_usulan"]),
-                    use_container_width=True)
-    st.caption(
-        f"Batas maksimum pemberian kredit satu grup pada demo ini "
-        f"{miliar(mock_engine.BATAS_BMPK_GRUP, 0)}. Usulan fasilitas pengajuan terpilih "
-        f"{miliar(baris['limit_usulan'], 0)}."
+        # Tabel dulu dan selebar halaman: dua belas kolom bukti tidak terbaca di
+        # kolom sempit, dan angka inilah yang dikutip komite. Graf menyusul
+        # sebagai ilustrasinya.
+        st.markdown("**Debitur eksisting yang terkait**")
+        tampil = hasil.tabel.copy()
+        tampil["eksposur_rp"] = tampil["eksposur_rp"].map(
+            lambda v: rupiah(v, singkat=True) if v else "—"
+        )
+        tampil["skor"] = tampil["skor"].map(
+            lambda v: f"{v:.2f}" if pd.notna(v) else "—"
+        )
+        tampil["ukuran_hub"] = tampil["ukuran_hub"].map(
+            lambda v: f"{int(v)}" if pd.notna(v) else "—"
+        )
+        tampil["sudah_gagal_bayar"] = tampil["sudah_gagal_bayar"].map(
+            {True: "ya", False: "—"}
+        )
+        tampil["hub"] = tampil["hub"].map({True: "hub", False: "—"})
+        st.dataframe(
+            tampil.rename(columns={
+                "cif_sk": "CIF", "nama_debitur": "Debitur", "grup": "Grup",
+                "dasar_utama": "Dasar terkuat", "semua_dasar": "Semua dasar",
+                "bukti": "Bukti", "skor": "Skor cocok",
+                "sudah_gagal_bayar": "Gagal bayar", "eksposur_rp": "Eksposur",
+                "jumlah_fasilitas": "Fasilitas", "ukuran_hub": "Debitur pada objek ini",
+                "hub": "Catatan",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+        if hasil.dipangkas:
+            st.caption(
+                f"Menampilkan {len(hasil.tabel)} dari {hasil.jumlah_kandidat} kandidat. "
+                "Urutan: bukti spesifik lebih dulu, hub di bawah."
+            )
+        st.caption(
+            "Keluaran ini bukan skor risiko dan tidak dipakai sebagai dasar penolakan — "
+            "ia memunculkan permintaan verifikasi kepada analis, termasuk pemeriksaan "
+            "apakah debitur terkait seharusnya masuk perhitungan BMPK grup."
+        )
+
+        if bool(hasil.tabel["hub"].any()):
+            st.caption(
+                f"Perhatian: sebagian bukti menempel pada objek yang terkait ≥ {gn.AMBANG_HUB} debitur. "
+                "`resolusi.py` sudah membuang alamat agen registrasi lewat `is_alamat_agen`, "
+                "tetapi belum punya penyaring setara untuk pihak berderajat tinggi — baris "
+                "seperti ini ditandai dan diturunkan peringkatnya, tidak dibuang."
+            )
+
+        judul_bagian("Peta hubungan")
+        simpul_g, edge_g = gn.graf_resolusi(hasil.tabel, nama_calon)
+        st.plotly_chart(
+            plot_graf(simpul_g, edge_g, warnai="tipe", sorot=nama_calon),
+            use_container_width=True,
+        )
+        st.markdown(
+            " ".join(badge(t, w) for t, w in PALET_TIPE.items()
+                     if t in set(simpul_g["tipe"])),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Objek bukti digambar sebagai simpul tersendiri, bukan label pada garis: "
+            "debitur yang berbagi pengurus atau alamat yang sama langsung terlihat "
+            "mengumpul pada satu titik. Simpul bertepi tebal adalah calon pengaju."
+        )
+
+# ==========================================================================
+# MODE 2 — nasabah eksisting
+# ==========================================================================
+with tab_eksisting:
+    daftar = gn.daftar_debitur()
+    if daftar is None or daftar.empty:
+        st.warning("Tidak ada debitur yang bisa dijadikan pusat subgraf.")
+        st.stop()
+
+    c1, c2, c3, c4 = st.columns([2.6, 1, 1, 1])
+    pilihan = c1.selectbox(
+        "Badan hukum pusat",
+        options=daftar["node_id"].tolist(),
+        format_func=lambda nid: (
+            f"{daftar.loc[daftar['node_id'] == nid, 'nama'].iat[0]} "
+            f"({int(daftar.loc[daftar['node_id'] == nid, 'derajat'].iat[0])} relasi)"
+        ),
+    )
+    hops = c2.select_slider("Kedalaman (hop)", [1, 2, 3], value=2)
+    batas = c3.number_input("Batas simpul", 20, 200, 60, step=10,
+                            help="Subgraf dipangkas sebelum dikirim ke antarmuka.")
+    warnai = c4.selectbox("Warna simpul", ["tipe", "komunitas"])
+
+    baris_pilih = daftar.loc[daftar["node_id"] == pilihan].iloc[0]
+    cif = int(baris_pilih["ref_id"])
+
+    s1, s2 = st.columns([1, 3])
+    mode_waktu = s1.radio(
+        "Kondisi graf", ["Terkini", "Pada snapshot"], horizontal=False,
+        help="Simpul dan relasi bertanggal. 'Terkini' memakai seluruh riwayat; "
+             "'Pada snapshot' hanya relasi yang berlaku di akhir bulan terpilih.",
+    )
+    if mode_waktu == "Pada snapshot" and snapshots:
+        pada = s2.select_slider(
+            "Snapshot", options=list(reversed(snapshots)), value=snapshots[0],
+            format_func=lambda t: pd.Timestamp(t).strftime("%b %Y"),
+        )
+        pada = pd.Timestamp(pada)
+    else:
+        pada = None
+        s2.caption("Memakai seluruh riwayat relasi. Metrik klaster hanya tersedia "
+                   "pada mode snapshot.")
+
+    # Filter lapisan relasi. Memilih satu tipe berarti melihat jaringan pada
+    # lapisan itu saja - "siapa yang terhubung ke debitur ini HANYA lewat
+    # rangkap jabatan", misalnya. Filter bekerja pada penelusuran, bukan pada
+    # gambar: simpul yang cuma bisa dicapai lewat relasi yang disaring keluar
+    # ikut hilang, bukan tertinggal melayang tanpa garis.
+    semua_rel = sorted(info["per_tipe_relasi"])
+    rel_pilih = st.multiselect(
+        "Lapisan relasi",
+        options=semua_rel,
+        default=semua_rel,
+        format_func=lambda r: f"{r} ({info['per_tipe_relasi'][r]:,})".replace(",", "."),
+        help="Kosongkan atau pilih semua untuk melihat seluruh lapisan sekaligus.",
+    )
+    rel_dipakai = (
+        None if not rel_pilih or len(rel_pilih) == len(semua_rel)
+        else tuple(rel_pilih)
     )
 
-st.divider()
+    hasil_sub = gn.subgraf_ego(int(pilihan), hops=int(hops),
+                               batas_simpul=int(batas), pada=pada,
+                               rel_dipakai=rel_dipakai)
+    if hasil_sub is None or hasil_sub.nodes.empty:
+        keterangan = "pada kondisi yang dipilih"
+        if rel_dipakai:
+            keterangan = "pada lapisan " + ", ".join(f"`{r}`" for r in rel_dipakai)
+        st.warning(
+            f"Debitur ini tidak punya relasi {keterangan}. "
+            "Lapisan lain mungkin berisi — tambahkan tipe relasi di atas.",
+        )
+        st.stop()
 
-tab_relasi, tab_derajat, tab_penting, tab_prediksi = st.tabs(
-    ["Daftar relasi", "Peringkat derajat", "Counterparty berpengaruh", "Prediksi relasi"]
-)
+    nodes, edges = hasil_sub.nodes, hasil_sub.edges
 
-with tab_relasi:
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Simpul pada subgraf", len(nodes))
+    m2.metric("Relasi pada subgraf", len(edges))
+    m3.metric(
+        "Tetangga langsung", hasil_sub.total_tetangga,
+        help="Dihitung pada lapisan relasi yang sedang dipilih, bukan pada graf penuh.",
+    )
+    m4.metric("Tipe relasi", edges["relasi"].nunique() if len(edges) else 0)
+
+    if rel_dipakai:
+        st.caption(
+            "Lapisan aktif: " + ", ".join(f"`{r}`" for r in rel_dipakai)
+            + ". Simpul yang hanya terhubung lewat lapisan lain tidak ikut ditelusuri."
+        )
+
+    if hasil_sub.dipangkas:
+        st.info(
+            f"Subgraf dipangkas ke {len(nodes)} simpul — debitur ini punya "
+            f"{hasil_sub.total_tetangga} tetangga langsung. Yang tidak tampil bukan "
+            "berarti tidak ada; naikkan batas simpul untuk melihat lebih banyak.",
+        )
+
+    kiri, kanan = st.columns([3, 2])
+    with kiri:
+        st.plotly_chart(
+            plot_graf(nodes, edges, warnai=warnai, sorot=nodes["id"].iat[0]),
+            use_container_width=True,
+        )
+        if warnai == "tipe":
+            st.markdown(
+                " ".join(badge(t, w) for t, w in PALET_TIPE.items()
+                         if t in set(nodes["tipe"])),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Warna menandai klaster Louvain pada snapshot terpilih.")
+
+    with kanan:
+        st.markdown("**Relasi menurut tipe**")
+        if len(edges):
+            ringkas = (
+                edges["relasi"].value_counts()
+                .rename_axis("Tipe relasi").reset_index(name="Jumlah")
+            )
+            st.dataframe(ringkas, use_container_width=True, hide_index=True)
+        st.markdown("**Simpul menurut tipe**")
+        st.dataframe(
+            nodes["tipe"].value_counts().rename_axis("Tipe").reset_index(name="Jumlah"),
+            use_container_width=True, hide_index=True,
+        )
+
+    # ---- kepemilikan
+    st.divider()
+    judul_bagian(
+        "Pemilik tercatat",
+        "Relasi kepemilikan pada data ini berhenti di satu lapis — pihak pemegang saham "
+        "tidak pernah sekaligus menjadi debitur, sehingga tidak ada rantai berlapis untuk "
+        "ditelusuri. Yang ditampilkan pemilik langsung, bukan penelusuran sampai "
+        "pemilik manfaat akhir. Identitas relasinya berasal dari ICIJ; "
+        "**angka porsinya sintesis** — ICIJ tidak memuat persentase saham, jadi porsi "
+        "diundi lalu dinormalkan per tanggal sampai berjumlah 100%. Yang bermakna di "
+        "sini urutan dan ukuran relatif antarpemilik, bukan besaran permodalannya.",
+    )
+    rantai = gn.kepemilikan_langsung(cif, pada)
+    if rantai is None or rantai.empty:
+        st.info("Tidak ada pemilik tercatat untuk debitur ini pada kondisi terpilih.")
+    else:
+        jumlah_pemilik = int(rantai["jumlah_pemilik"].iat[0])
+        porsi_total = float(rantai["porsi_total"].iat[0])
+        besar = rantai[rantai["porsi_langsung"] >= gn.AMBANG_PEMILIK_MANFAAT]
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Pemilik tercatat", jumlah_pemilik)
+        k2.metric(f"Porsi ≥ {gn.AMBANG_PEMILIK_MANFAAT:.0%}", len(besar),
+                  help="Ambang yang lazim dipakai penelaahan APU-PPT untuk pemilik manfaat.")
+        k3.metric("Total porsi tercatat", persen(porsi_total, 1))
+
+        # Porsi dinormalkan per debitur per segmen waktu di pipeline, jadi ini
+        # harus selalu 100%. Kalau tidak, yang rusak pipeline-nya - bukan sifat
+        # datanya - dan halaman perlu menyebutnya, bukan diam-diam menampilkannya.
+        if abs(porsi_total - 1.0) > 0.01:
+            st.warning(
+                f"Total porsi kepemilikan {persen(porsi_total, 1)}, seharusnya 100%. "
+                "Porsi dinormalkan per debitur per rentang tanggal di "
+                "`pipelines.graph.struktur._kapitalisasi_pit`; selisih di sini berarti "
+                "normalisasi itu tidak berlaku untuk kondisi terpilih.",
+            )
+
+        ko, kt = st.columns([3, 2])
+        with ko:
+            st.plotly_chart(plot_kepemilikan(rantai, baris_pilih["nama"]),
+                            use_container_width=True)
+            if jumlah_pemilik > len(rantai):
+                st.caption(
+                    f"Menampilkan {len(rantai)} porsi terbesar dari {jumlah_pemilik} "
+                    f"pemilik tercatat — mencakup "
+                    f"{persen(float(rantai['porsi_langsung'].sum()), 1)} kepemilikan."
+                )
+        with kt:
+            tampil = rantai.drop(columns=["porsi_total", "jumlah_pemilik", "tingkat",
+                                          "aktivitas_usaha", "yurisdiksi"], errors="ignore")
+            tampil["porsi_langsung"] = tampil["porsi_langsung"].map(lambda v: persen(v, 1))
+            tampil["porsi_efektif"] = tampil["porsi_efektif"].map(lambda v: persen(v, 1))
+            tampil["pengendali_efektif"] = tampil["pengendali_efektif"].map(
+                {True: "ya", False: "—"}
+            )
+            st.dataframe(
+                tampil.rename(columns={
+                    "pemilik": "Pemilik", "jenis": "Jenis", "dimiliki": "Memiliki",
+                    "porsi_langsung": "Porsi", "porsi_efektif": "Porsi efektif",
+                    "pengendali_efektif": "Pengendali", "valid_from": "Berlaku dari",
+                    "valid_to": "Sampai",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+
+    # ---- BMPK
+    st.divider()
+    judul_bagian("Eksposur grup usaha terhadap BMPK")
+    ringkas_grup = gn.eksposur_grup(baris_pilih.get("grup_id"), pada or snapshot_terbaru)
+    if ringkas_grup is None:
+        st.info(
+            "Grup usaha debitur ini tidak punya baris eksposur pada tanggal tersebut. "
+            "Angka BMPK tidak ditampilkan daripada menampilkan nol yang menyesatkan.",
+        )
+    else:
+        g1, g2 = st.columns([2, 3])
+        with g1:
+            st.metric("Grup usaha", ringkas_grup["nama_grup"])
+            if ringkas_grup["jumlah_entitas"] is not None:
+                st.metric("Entitas dalam grup", ringkas_grup["jumlah_entitas"])
+            st.metric("Eksposur gabungan", miliar(ringkas_grup["total_eksposur_rp"], 1),
+                      delta=f"{persen(ringkas_grup['group_exposure_share'], 1)} dari batas",
+                      delta_color="off")
+            st.metric("Sisa ruang", miliar(ringkas_grup["sisa_ruang_rp"], 0))
+        with g2:
+            st.plotly_chart(
+                plot_bmpk(ringkas_grup["total_eksposur_rp"],
+                          batas=ringkas_grup["batas_bmpk_rp"]),
+                use_container_width=True,
+            )
+            st.caption(
+                f"Batas maksimum pemberian kredit grup "
+                f"{miliar(ringkas_grup['batas_bmpk_rp'], 0)}, posisi per "
+                f"{pd.Timestamp(ringkas_grup['snapshot_date']).strftime('%d %b %Y')}."
+            )
+
+    # ---- daftar relasi
+    st.divider()
+    judul_bagian("Daftar relasi pada subgraf")
     tabel = edges.copy()
-    tabel["bobot"] = tabel["bobot"].map(lambda v: rupiah(v, singkat=True))
-    tabel = tabel.rename(columns={"source": "Dari", "target": "Ke",
-                                  "relasi": "Tipe relasi", "bobot": "Bobot"})
-    st.dataframe(tabel.sort_values("Tipe relasi"), use_container_width=True, hide_index=True)
+    # Bobot beda satuan per tipe relasi: rupiah pada `memasok`, porsi pada
+    # `memiliki`, penanda 1,0 pada sisanya. Memformat semuanya sebagai rupiah
+    # membuat porsi 0,36 tampil sebagai "Rp 0".
+    def _bobot(baris: pd.Series) -> str:
+        rel, nilai = baris["relasi"], float(baris["bobot"])
+        if rel == "memasok":
+            return rupiah(nilai, singkat=True)
+        if rel == "memiliki":
+            return persen(nilai, 1)
+        return "—"
+
+    tabel["Bobot"] = tabel.apply(_bobot, axis=1)
+    tabel["Berlaku dari"] = pd.to_datetime(tabel["valid_from"]).dt.strftime("%b %Y")
+    tabel["Sampai"] = pd.to_datetime(tabel["valid_to"]).dt.strftime("%b %Y").fillna("—")
+    st.dataframe(
+        tabel[["source", "target", "relasi", "Bobot", "Berlaku dari", "Sampai"]]
+        .rename(columns={"source": "Dari", "target": "Ke", "relasi": "Tipe relasi"})
+        .sort_values("Tipe relasi"),
+        use_container_width=True, hide_index=True,
+    )
     st.caption(
-        "Bobot relasi dagang adalah nilai transfer 12 bulan; bobot relasi kepemilikan adalah "
-        "porsi kepemilikan yang dinormalkan."
-    )
-
-with tab_derajat:
-    derajat = (
-        pd.concat([edges["source"], edges["target"]])
-        .value_counts().rename_axis("entity_id").reset_index(name="derajat")
-        .merge(nodes[["id", "tipe", "peran", "hop", "community_id"]],
-               left_on="entity_id", right_on="id", how="left")
-        .drop(columns="id")
-    )
-    st.dataframe(
-        derajat.rename(columns={
-            "entity_id": "Entitas", "derajat": "Derajat", "tipe": "Tipe",
-            "peran": "Peran", "hop": "Hop", "community_id": "Klaster",
-        }),
-        use_container_width=True, hide_index=True,
-    )
-    st.caption("Derajat dihitung pada subgraf yang ditampilkan, bukan pada graf penuh.")
-
-with tab_penting:
-    cp = dummy_data.counterparty_penting().copy()
-    cp["eksposur_terdampak"] = cp["eksposur_terdampak"].map(lambda v: rupiah(v, singkat=True))
-    cp["volume_tahunan"] = cp["volume_tahunan"].map(lambda v: rupiah(v, singkat=True))
-    cp["pagerank"] = cp["pagerank"].round(4)
-    cp["betweenness"] = cp["betweenness"].round(3)
-    st.dataframe(
-        cp.rename(columns={
-            "entity_id": "Entitas", "nama": "Nama", "peran": "Peran", "sektor": "Sektor",
-            "wilayah": "Wilayah", "debitur_terhubung": "Debitur terhubung",
-            "pagerank": "PageRank", "betweenness": "Betweenness",
-            "volume_tahunan": "Volume tahunan", "eksposur_terdampak": "Eksposur terdampak",
-        }),
-        use_container_width=True, hide_index=True,
-    )
-    st.caption("Dihitung batch pada DAG bulanan, dibaca sebagai tabel — bukan dihitung saat halaman dimuat.")
-
-with tab_prediksi:
-    st.caption(
-        "Kandidat relasi dari link prediction. Prediksi relasi tidak dipakai sebagai dasar "
-        "penolakan; keluarannya hanya memunculkan permintaan verifikasi kepada analis — "
-        "termasuk pemeriksaan apakah kandidat tersebut seharusnya masuk ke perhitungan BMPK grup."
-    )
-    kandidat = nodes.iloc[1:6][["id", "tipe", "peran"]].copy()
-    kandidat["probabilitas"] = [0.74, 0.66, 0.59, 0.52, 0.45][: len(kandidat)]
-    kandidat["dasar"] = ["Adamic-Adar tinggi", "Common neighbors 4", "Preferential attachment",
-                         "Jaccard 0,38", "node2vec + classifier"][: len(kandidat)]
-    kandidat["tindak_lanjut"] = [
-        "Verifikasi apakah satu kendali dengan debitur", "Peluang supply chain financing",
-        "Verifikasi rangkap jabatan pengurus", "Peluang cross-selling trade finance",
-        "Periksa penjaminan silang",
-    ][: len(kandidat)]
-    st.dataframe(
-        kandidat.rename(columns={
-            "id": "Kandidat", "tipe": "Tipe", "peran": "Peran",
-            "probabilitas": "Probabilitas", "dasar": "Dasar", "tindak_lanjut": "Tindak lanjut",
-        }),
-        use_container_width=True, hide_index=True,
+        "Bobot `memasok` adalah nilai transfer, `memiliki` adalah porsi kepemilikan, "
+        "sisanya penanda tanpa satuan."
     )

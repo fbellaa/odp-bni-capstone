@@ -28,12 +28,12 @@ import streamlit as st
 from lib import dummy_data, model_nyata as mn
 from lib.format import cacah
 from lib.tampilan import (
-    AKSEN,
-    AMBER,
-    KORAL,
-    MERAH,
-    PRIMER,
-    UNGU,
+    ABU_TUA,
+    JINGGA,
+    JINGGA_GELAP,
+    JINGGA_TUA,
+    TOSCA,
+    TOSCA_TUA,
     gaya_plot,
     hero,
     judul_bagian,
@@ -43,7 +43,7 @@ from lib.tampilan import (
     sidebar_status,
 )
 
-setup_halaman("Kesehatan model", "🩺")
+setup_halaman("Kesehatan model")
 sidebar_status()
 
 ev_pd = mn.evaluasi_pd()
@@ -68,7 +68,6 @@ if ev_pd is None and ev_ews is None and ev_lgd is None:
     st.error(
         "Artefak model atau data emas tidak ditemukan. Pastikan `ml/models/*.joblib` dan "
         "`data/gold/*.parquet` ada, lalu pasang `scikit-learn`, `xgboost`, dan `pyarrow`.",
-        icon="⛔",
     )
     st.stop()
 
@@ -129,7 +128,7 @@ tab_pd, tab_ews, tab_lgd, tab_psi, tab_agen, tab_kualitas = st.tabs(
 # ----------------------------------------------------------------- tab PD
 with tab_pd:
     if not ev_pd or not ev_pd.get("uji_oot"):
-        st.info("Evaluasi PD tidak tersedia.", icon="ℹ️")
+        st.info("Evaluasi PD tidak tersedia.")
     else:
         p = ev_pd["uji_oot"]
         st.markdown(
@@ -140,7 +139,7 @@ with tab_pd:
                 "yang benar-benar gagal bayar. Satu debitur bermasalah yang lolos berbiaya "
                 "jauh lebih besar daripada satu berkas sehat yang ikut ditelaah, sehingga "
                 "ambang dipilih dari sisi recall lebih dulu, baru beban telaah dihitung.",
-                warna=AKSEN, ikon="🎯",
+                warna=TOSCA,
             ),
             unsafe_allow_html=True,
         )
@@ -171,11 +170,11 @@ with tab_pd:
         fig = px.histogram(
             sebaran, x="skor", color="kelompok", barmode="overlay", nbins=45,
             histnorm="probability density",
-            color_discrete_map={"Tidak default": PRIMER, "Default": MERAH},
+            color_discrete_map={"Tidak default": TOSCA_TUA, "Default": JINGGA_GELAP},
             labels={"skor": "PD terkalibrasi", "kelompok": ""},
         )
         ambang_q80 = float(mn.muat_pd()["risk_cutoffs"]["q80"])
-        fig.add_vline(x=ambang_q80, line_dash="dot", line_color=AMBER,
+        fig.add_vline(x=ambang_q80, line_dash="dot", line_color=JINGGA,
                       annotation_text="ambang q80", annotation_position="top right")
         st.plotly_chart(gaya_plot(fig, 380), use_container_width=True)
 
@@ -189,7 +188,7 @@ with tab_pd:
 # ---------------------------------------------------------------- tab EWS
 with tab_ews:
     if not ev_ews:
-        st.info("Evaluasi EWS tidak tersedia.", icon="ℹ️")
+        st.info("Evaluasi EWS tidak tersedia.")
     else:
         e = ev_ews["uji_oot"]
         m1, m2, m3, m4 = st.columns(4)
@@ -212,7 +211,7 @@ with tab_ews:
                 "Menurunkan ambang dari 5 persen ke 2 persen menaikkan recall tetapi "
                 "melipatgandakan jumlah fasilitas yang harus dipantau tiap bulan. Angka "
                 "yang dipakai produksi adalah keputusan kapasitas tim, bukan keputusan model.",
-                warna=UNGU, ikon="📌",
+                warna=ABU_TUA,
             ),
             unsafe_allow_html=True,
         )
@@ -220,7 +219,7 @@ with tab_ews:
 # ---------------------------------------------------------------- tab LGD
 with tab_lgd:
     if not ev_lgd:
-        st.info("Evaluasi LGD tidak tersedia.", icon="ℹ️")
+        st.info("Evaluasi LGD tidak tersedia.")
     else:
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("MAE", f"{ev_lgd['mae']:.3f}")
@@ -235,12 +234,12 @@ with tab_lgd:
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=ev_lgd["realisasi"], y=ev_lgd["prediksi"], mode="markers",
-            marker=dict(size=7, color=PRIMER, opacity=.55, line=dict(width=0)),
+            marker=dict(size=7, color=TOSCA_TUA, opacity=.55, line=dict(width=0)),
             name="Fasilitas", hovertemplate="Realisasi %{x:.2f}<br>Prediksi %{y:.2f}<extra></extra>",
         ))
         fig.add_trace(go.Scatter(
             x=[0, 1], y=[0, 1], mode="lines", name="Prediksi sempurna",
-            line=dict(color=KORAL, dash="dash", width=2),
+            line=dict(color=JINGGA_TUA, dash="dash", width=2),
         ))
         fig.update_layout(xaxis_title="LGD realisasi", yaxis_title="LGD prediksi",
                           title="Prediksi terhadap realisasi")
@@ -248,27 +247,27 @@ with tab_lgd:
 
         galat = pd.DataFrame({"galat": ev_lgd["prediksi"] - ev_lgd["realisasi"]})
         fig2 = px.histogram(galat, x="galat", nbins=30,
-                            color_discrete_sequence=[AKSEN],
+                            color_discrete_sequence=[TOSCA],
                             labels={"galat": "Prediksi − realisasi"})
-        fig2.add_vline(x=0, line_dash="dot", line_color=MERAH)
+        fig2.add_vline(x=0, line_dash="dot", line_color=JINGGA_GELAP)
         st.plotly_chart(gaya_plot(fig2, 300), use_container_width=True)
 
 # ---------------------------------------------------------------- tab PSI
 with tab_psi:
     psi = mn.psi_fitur()
     if psi is None:
-        st.info("PSI tidak bisa dihitung — split latih atau uji tidak tersedia.", icon="ℹ️")
+        st.info("PSI tidak bisa dihitung — split latih atau uji tidak tersedia.")
     else:
         st.caption("PSI < 0,10 stabil · 0,10–0,25 perlu perhatian · > 0,25 pergeseran nyata. "
                    "Dihitung antara data latih dan periode uji out-of-time.")
         atas = psi.head(18).iloc[::-1]
-        warna = [AKSEN if v < 0.10 else (AMBER if v < 0.25 else MERAH) for v in atas["psi"]]
+        warna = [TOSCA if v < 0.10 else (JINGGA if v < 0.25 else JINGGA_GELAP) for v in atas["psi"]]
         fig = go.Figure(go.Bar(
             x=atas["psi"], y=atas["fitur"], orientation="h", marker_color=warna,
             hovertemplate="<b>%{y}</b><br>PSI %{x:.3f}<extra></extra>",
         ))
-        fig.add_vline(x=0.10, line_dash="dot", line_color=AMBER)
-        fig.add_vline(x=0.25, line_dash="dot", line_color=MERAH)
+        fig.add_vline(x=0.10, line_dash="dot", line_color=JINGGA)
+        fig.add_vline(x=0.25, line_dash="dot", line_color=JINGGA_GELAP)
         fig.update_layout(xaxis_title="Population stability index", yaxis_title=None,
                           title="Delapan belas fitur dengan pergeseran terbesar")
         st.plotly_chart(gaya_plot(fig, 520), use_container_width=True)
@@ -276,9 +275,9 @@ with tab_psi:
         perhatian = psi[psi["psi"] >= 0.10]
         if len(perhatian):
             st.warning("Fitur yang perlu perhatian: "
-                       + ", ".join(f"`{f}`" for f in perhatian["fitur"]), icon="⚠️")
+                       + ", ".join(f"`{f}`" for f in perhatian["fitur"]))
         else:
-            st.success("Seluruh fitur berada pada rentang stabil.", icon="✅")
+            st.success("Seluruh fitur berada pada rentang stabil.")
 
 # --------------------------------------------------------------- tab agen
 with tab_agen:
@@ -289,7 +288,7 @@ with tab_agen:
             "dari model yang dipakai agen. Tiap kasus uji dijalankan dua varian agen, "
             "keduanya diadu, dan penilai memilih yang lebih baik beserta alasannya. "
             "Nilai di bawah adalah tingkat kemenangan dan skor rubrik dari arena tersebut.",
-            warna=UNGU, ikon="⚖️",
+            warna=ABU_TUA,
         ),
         unsafe_allow_html=True,
     )
@@ -298,7 +297,7 @@ with tab_agen:
     tampil["lulus"] = tampil["nilai"] >= tampil["ambang"]
     fig = px.bar(
         tampil, x="nilai", y="metrik", orientation="h",
-        color="lulus", color_discrete_map={True: AKSEN, False: MERAH},
+        color="lulus", color_discrete_map={True: TOSCA, False: JINGGA_GELAP},
         labels={"nilai": "Nilai", "metrik": "", "lulus": "Memenuhi ambang"},
     )
     fig.update_layout(xaxis_range=[0, 1.05], showlegend=False,
@@ -316,15 +315,12 @@ with tab_agen:
         "Penilai hanya memutus mutu penalaran dan kelengkapan sitasi. Angka pada memo tidak "
         "ikut dinilai model — angka dibandingkan langsung dengan keluaran tool, dan selisih "
         "berapa pun dihitung sebagai gagal.",
-        icon="🛡️",
     )
 
 # ------------------------------------------------------------ tab kualitas
 with tab_kualitas:
     gerbang = dummy_data.gerbang_kualitas_data()
-    ikon = {"Lulus": "✅", "Lulus dengan perbaikan": "🛠️", "Perlu telaah": "⚠️"}
     tampil = gerbang.copy()
-    tampil["hasil"] = tampil["hasil"].map(lambda h: f"{ikon.get(h, '•')} {h}")
     st.dataframe(
         tampil.rename(columns={"pemeriksaan": "Pemeriksaan", "hasil": "Hasil",
                                "baris_karantina": "Baris masuk karantina"}),

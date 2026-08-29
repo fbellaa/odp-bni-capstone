@@ -18,9 +18,9 @@ import streamlit.components.v1 as components
 
 from lib import dummy_data
 from lib.format import miliar, persen, rupiah
-from lib.tampilan import AKSEN, AMBER, KORAL, MERAH, gaya_plot, hero, setup_halaman, sidebar_status
+from lib.tampilan import TOSCA, JINGGA, JINGGA_TUA, JINGGA_GELAP, gaya_plot, hero, setup_halaman, sidebar_status
 
-setup_halaman("Dashboard BI", "📈")
+setup_halaman("Dashboard BI")
 sidebar_status()
 
 hero(
@@ -36,7 +36,7 @@ hero(
 METABASE_URL = os.getenv("METABASE_EMBED_URL", "")
 
 if METABASE_URL:
-    st.success(f"Menyematkan dashboard dari `{METABASE_URL}`.", icon="🔗")
+    st.success(f"Menyematkan dashboard dari `{METABASE_URL}`.")
     components.iframe(METABASE_URL, height=900, scrolling=True)
     st.stop()
 
@@ -44,7 +44,6 @@ st.info(
     "`METABASE_EMBED_URL` belum diatur, jadi halaman ini menampilkan **pratinjau pengganti** "
     "dengan data dummy. Setelah Metabase jalan, isi variabel lingkungan tersebut "
     "(misalnya `http://localhost/bi/public/dashboard/<uuid>`) dan iframe akan tampil di sini.",
-    icon="ℹ️",
 )
 
 df = dummy_data.daftar_pengajuan()
@@ -66,8 +65,8 @@ bulanan = (
 c1, c2 = st.columns(2)
 with c1:
     fig = px.bar(bulanan, x="bulan", y="jumlah", color="keputusan",
-                 color_discrete_map={"SETUJU": AKSEN, "SETUJU DENGAN SYARAT": AMBER,
-                                     "PERLU PENYESUAIAN": KORAL, "TOLAK": MERAH},
+                 color_discrete_map={"SETUJU": TOSCA, "SETUJU DENGAN SYARAT": JINGGA,
+                                     "PERLU PENYESUAIAN": JINGGA_TUA, "TOLAK": JINGGA_GELAP},
                  labels={"bulan": "Bulan", "jumlah": "Jumlah pengajuan", "keputusan": "Keputusan"})
     fig.update_layout(title="Pengajuan komersial per bulan menurut keputusan")
     st.plotly_chart(gaya_plot(fig, 380), use_container_width=True)

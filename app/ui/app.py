@@ -15,28 +15,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from lib import model_nyata as mn
 from lib.format import cacah, miliar, persen, rupiah
 from lib.tampilan import (
-    AKSEN,
-    AMBER,
+    ABU,
     DERET_KATEGORI,
-    KORAL,
-    MERAH,
-    PRIMER,
-    UNGU,
+    JINGGA,
+    JINGGA_GELAP,
+    TOSCA,
+    TOSCA_GELAP,
+    TOSCA_TUA,
     gaya_plot,
     hero,
     judul_bagian,
+    kartu,
     setup_halaman,
     sidebar_status,
 )
 
-setup_halaman("Beranda", "🏦")
+setup_halaman("Beranda")
 sidebar_status()
 
 abt = mn.gold("abt_pd")
@@ -45,7 +45,7 @@ pengajuan = mn.gold("fact_pengajuan")
 status = mn.status_lapisan_model()
 
 hero(
-    "🏦",
+    "CC",
     "Agentic AI Copilot untuk Keputusan Kredit Komersial",
     "Sistem pendukung keputusan kredit segmen komersial — debitur menengah dengan penjualan "
     "tahunan Rp 30 sampai 300 miliar. Memadukan data engineering, pemodelan risiko, analisis "
@@ -62,7 +62,6 @@ if abt is None:
     st.error(
         "Lapisan emas belum dibangun. Jalankan pipeline lebih dulu, atau salin "
         "`data/gold/*.parquet` ke tempatnya.",
-        icon="⛔",
     )
     st.stop()
 
@@ -90,7 +89,7 @@ with kiri:
     )
     fig = px.bar(
         hitung, x="app_rating_internal", y="jumlah", color="tingkat_default",
-        color_continuous_scale=[[0, AKSEN], [0.5, AMBER], [1, MERAH]],
+        color_continuous_scale=[[0, TOSCA], [0.5, JINGGA], [1, JINGGA_GELAP]],
         labels={"app_rating_internal": "Rating internal", "jumlah": "Jumlah pengajuan",
                 "tingkat_default": "Tingkat default"},
     )
@@ -106,14 +105,14 @@ with kanan:
             teratas, x="penjualan_grup_rp", y="nama_grup", orientation="h",
             labels={"penjualan_grup_rp": "Penjualan grup (Rp)", "nama_grup": ""},
         )
-        fig2.update_traces(marker_color=PRIMER)
+        fig2.update_traces(marker_color=TOSCA_TUA)
         st.plotly_chart(gaya_plot(fig2, 330), use_container_width=True)
         st.caption(
             cacah(len(grup))
             + " grup usaha terbentuk dari resolusi kepemilikan dan pengendalian pada lapisan graf."
         )
     else:
-        st.info("Tabel `dim_grup_usaha` belum tersedia.", icon="ℹ️")
+        st.info("Tabel `dim_grup_usaha` belum tersedia.")
 
 if pengajuan is not None and "keputusan" in pengajuan:
     st.markdown("**Keputusan historis pada berkas pengajuan**")
@@ -132,28 +131,25 @@ halaman = [
     ("01 · Copilot pengajuan",
      "Chat relationship manager plus unggahan PDF laporan keuangan, data kepemilikan, dan "
      "rekening koran. Copilot membaca berkas, memanggil tool, lalu mengeluarkan PD, LGD, "
-     "posisi klaster, gerbang kepatuhan, dan draft credit memo.", PRIMER, "🤖"),
+     "posisi klaster, gerbang kepatuhan, dan draft credit memo.", TOSCA_TUA),
     ("02 · Simulasi what-if",
      "Sandbox perhitungan: plafon, tenor, struktur agunan, dan asumsi EBITDA digeser, lalu "
-     "skor, pricing, covenant, dan expected loss diperbarui seketika.", AKSEN, "🎚️"),
+     "skor, pricing, covenant, dan expected loss diperbarui seketika.", TOSCA),
     ("03 · Struktur grup dan jaringan",
      "Subgraf ego dua hop, penelusuran kepemilikan sampai pemilik manfaat akhir, penyorotan "
-     "klaster, dan panel pola anomali struktur.", UNGU, "🕸️"),
+     "klaster, dan panel pola anomali struktur.", TOSCA_GELAP),
     ("04 · Kesehatan model",
      "Metrik PD, EWS, dan LGD dihitung ulang dari artefak model di atas data emas, dengan "
-     "recall sebagai ukuran utama; ditambah PSI dan hasil judge arena Qwen 14B.", AMBER, "🩺"),
+     "recall sebagai ukuran utama; ditambah PSI dan hasil judge arena Qwen 14B.", JINGGA),
     ("05 · Dashboard BI",
-     "Metabase disematkan untuk lapisan eksekutif — masih dalam pembangunan.", KORAL, "📈"),
+     "Metabase disematkan untuk lapisan eksekutif — masih dalam pembangunan.", ABU),
 ]
 kiri, kanan = st.columns(2)
-for i, (judul, isi, warna, ikon) in enumerate(halaman):
+for i, (judul, isi, warna) in enumerate(halaman):
     kolom = kiri if i % 2 == 0 else kanan
     with kolom:
         st.markdown(
-            f'<div class="kartu" style="--w:{warna}">'
-            f'<div class="kartu-judul">{ikon} {judul}</div>'
-            f'<div class="kartu-isi">{isi}</div></div>',
-            unsafe_allow_html=True,
+            kartu(judul, isi, warna=warna), unsafe_allow_html=True,
         )
 
-st.info("Pilih halaman melalui menu di sisi kiri untuk memulai.", icon="👈")
+st.info("Pilih halaman melalui menu di sisi kiri untuk memulai.")

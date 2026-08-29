@@ -311,6 +311,91 @@ def _produk(jenis_fasilitas: str, agunan: str) -> tuple[str, str, bool]:
     return "modal_kerja", "Kredit Modal Kerja Transaksional", "koran" in j
 
 
+def _angka(entitas: dict, kunci: str) -> float | None:
+    """Nilai numerik dari entitas, atau `None` kalau pos itu tidak terbaca."""
+    nilai = entitas.get(kunci)
+    if nilai is None or nilai == "":
+        return None
+    try:
+        return float(nilai)
+    except (TypeError, ValueError):
+        return None
+
+
+def ebitda_bangun(laba_bersih, pajak, bunga, penyusutan) -> float | None:
+    """EBITDA disusun ulang dari laba bersih + pajak + bunga + penyusutan.
+
+    Laporan in-house hampir tidak pernah memuat baris EBITDA, sementara tiga
+    fitur model bergantung padanya (debt to EBITDA, ICR, marjin operasi). Tanpa
+    penyusunan ini ketiganya berdiri di atas taksiran marjin 10% - angka yang
+    tidak pernah dilihat siapa pun di dokumen nasabah.
+
+    Butuh laba bersih dan sedikitnya satu komponen tambahan; kalau tidak,
+    hasilnya `None` dan pemanggil kembali ke taksiran marjin.
+    """
+    if laba_bersih is None:
+        return None
+    tambahan = [x for x in (pajak, bunga, penyusutan) if x is not None]
+    if not tambahan:
+        return None
+    return float(laba_bersih) + float(sum(tambahan))
+
+
+def _rasio_tahun(fakta: dict) -> dict:
+    """DER, ICR, debt to EBITDA, dan penjualan untuk satu periode laporan.
+
+    Rumusnya dibuat sama persis dengan jalur utama `bangun_fitur_pd` supaya
+    perubahan antar tahun benar-benar perubahan angka nasabah, bukan efek dua
+    definisi yang berbeda.
+    """
+    penjualan = fakta.get("penjualan")
+    liabilitas = fakta.get("total_liabilitas")
+    ekuitas = fakta.get("ekuitas")
+    bunga = fakta.get("beban_bunga")
+    ebitda = ebitda_bangun(
+        fakta.get("laba_bersih"), fakta.get("pajak"), bunga, fakta.get("penyusutan")
+    )
+    rasio: dict[str, float] = {}
+    if penjualan:
+        rasio["penjualan_rp"] = float(penjualan)
+    if liabilitas and ekuitas:
+        rasio["der"] = float(liabilitas) / float(ekuitas)
+    if liabilitas and ebitda and ebitda > 0:
+        rasio["debt_to_ebitda"] = float(liabilitas) / ebitda
+    if ebitda and bunga:
+        rasio["icr"] = ebitda / float(bunga)
+    return rasio
+
+
+def fitur_tren(riwayat: dict) -> dict[str, float]:
+    """Fitur tren dari laporan beberapa periode.
+
+    Mengikuti `pipelines/generators/sintesis.py`: `_yoy` adalah perubahan
+    relatif terhadap tahun sebelumnya, `_delta_3thn` adalah SELISIH ABSOLUT
+    terhadap tahun paling awal - bukan rasio, dan bukan rata-rata.
+
+    Tahun yang tersedia kurang dari dua berarti tidak ada tren untuk dihitung,
+    dan `_delta_3thn` hanya diisi kalau tiga periode benar-benar terbaca.
+    """
+    tahun = sorted(int(x) for x in riwayat)
+    if len(tahun) < 2:
+        return {}
+    seri = {y: _rasio_tahun(riwayat[y]) for y in tahun}
+    kini, lalu, awal = seri[tahun[-1]], seri[tahun[-2]], seri[tahun[0]]
+
+    hasil: dict[str, float] = {}
+    for kolom, nama in (("der", "fin_der"), ("icr", "fin_icr"),
+                        ("debt_to_ebitda", "fin_debt_to_ebitda")):
+        if kolom in kini and kolom in lalu and lalu[kolom]:
+            hasil[f"{nama}_yoy"] = (kini[kolom] - lalu[kolom]) / abs(lalu[kolom])
+        if len(tahun) >= 3 and kolom in kini and kolom in awal:
+            hasil[f"{nama}_delta_3thn"] = kini[kolom] - awal[kolom]
+    if "penjualan_rp" in kini and lalu.get("penjualan_rp"):
+        hasil["fin_growth_penjualan"] = (
+            kini["penjualan_rp"] - lalu["penjualan_rp"]) / lalu["penjualan_rp"]
+    return hasil
+
+
 def bangun_fitur_pd(entitas: dict) -> tuple[pd.DataFrame, list[str]]:
     """Susun satu baris fitur PD dari entitas hasil ekstraksi narasi/dokumen.
 
@@ -326,6 +411,18 @@ def bangun_fitur_pd(entitas: dict) -> tuple[pd.DataFrame, list[str]]:
     penjualan = float(entitas.get("penjualan_tahunan") or rujukan["fin_penjualan_rp"])
     margin = float(entitas.get("ebitda_margin") or 0.10)
     ebitda = float(entitas.get("ebitda_rp") or penjualan * margin)
+    # Baris EBITDA hampir tidak pernah ada di laporan in-house. Kalau dokumen
+    # tidak memuatnya, susun ulang dari komponennya sebelum jatuh ke taksiran
+    # marjin - dan setel marjin operasi mengikuti EBITDA hasil susunan itu,
+    # supaya keduanya tidak saling bertentangan di baris fitur yang sama.
+    if not entitas.get("ebitda_rp"):
+        disusun = ebitda_bangun(
+            _angka(entitas, "laba_bersih_rp"), _angka(entitas, "pajak_rp"),
+            _angka(entitas, "beban_bunga_rp"), _angka(entitas, "penyusutan_rp"),
+        )
+        if disusun and disusun > 0 and penjualan > 0:
+            ebitda = disusun
+            margin = ebitda / penjualan
     der = float(entitas.get("der") or rujukan["fin_der"])
     ekuitas = float(entitas.get("ekuitas_rp") or penjualan / max(rujukan["_penjualan_per_ekuitas"], 0.1))
     liabilitas = float(entitas.get("total_liabilitas_rp") or der * ekuitas)
@@ -363,12 +460,92 @@ def bangun_fitur_pd(entitas: dict) -> tuple[pd.DataFrame, list[str]]:
         "app_nama_produk": produk,
         "app_revolving": bool(revolving),
         "app_sektor_kbli": SEKTOR_KE_KBLI.get(entitas.get("sektor", ""), "C"),
-        "app_nilai_likuidasi_rp": agunan_nilai * 0.75,
-        "app_jumlah_agunan": 1 if "Tanpa agunan" in str(entitas.get("jenis_agunan", "")) else 2,
+        # Nilai likuidasi dikutip dari hasil appraisal pada nota analisa bila ada;
+        # potongan 0,75 hanya taksiran cadangan saat nota tidak memuatnya.
+        "app_nilai_likuidasi_rp": float(
+            _angka(entitas, "nilai_likuidasi") or agunan_nilai * 0.75),
+        "app_jumlah_agunan": int(
+            _angka(entitas, "jumlah_agunan")
+            or (1 if "Tanpa agunan" in str(entitas.get("jenis_agunan", "")) else 2)),
         "app_ada_agunan_likuid": "Deposito" in str(entitas.get("jenis_agunan", "")),
-        "app_ada_jaminan_silang": bool(entitas.get("indikasi_rangkap_jabatan")),
+        # Jaminan silang dinyatakan di nota analisa. Rangkap jabatan dipakai
+        # sebagai penanda cadangan saja - keduanya memang berkorelasi, tetapi
+        # yang satu pernyataan pengusul dan yang satu temuan graf.
+        "app_ada_jaminan_silang": bool(
+            entitas.get("ada_jaminan_silang", entitas.get("indikasi_rangkap_jabatan"))),
         "app_dokumen_ringkas": bool(entitas.get("dokumen_ringkas", False)),
     }
+
+    # Penilaian unit risiko. Keduanya menyumbang porsi gain terbesar di model PD,
+    # jadi membiarkannya jatuh ke median bukan pilihan netral: itu menarik setiap
+    # pengajuan ke arah rata-rata portofolio dan menumpulkan sinyal fitur lain.
+    rating = str(entitas.get("rating_internal") or "").strip().upper()
+    if rating in ORD_RATING:
+        terhitung["app_rating_internal"] = rating
+    skor = _angka(entitas, "skor_kredit")
+    if skor is not None:
+        terhitung["app_skor_kredit"] = skor
+
+    # Rasio neraca lancar hanya dihitung kalau pos penyusunnya benar-benar
+    # terbaca dari dokumen. Kalau tidak, kolomnya sengaja dibiarkan jatuh ke
+    # median portofolio di bawah dan muncul pada `diisi_rujukan` - lebih baik
+    # halaman menyebut "ini angka median" daripada menampilkan rasio yang
+    # sebetulnya karangan.
+    #
+    # Rumusnya mengikuti persis `pipelines/transform/silver.py`, tempat fitur
+    # yang sama dibentuk untuk data latih. Menghitungnya dengan definisi lain
+    # berarti memberi model angka yang tidak sebanding dengan yang dipelajarinya.
+    lancar = _angka(entitas, "aset_lancar_rp")
+    lancar_lb = _angka(entitas, "liabilitas_lancar_rp")
+    persediaan = _angka(entitas, "persediaan_rp")
+    piutang = _angka(entitas, "piutang_rp")
+    laba_ditahan = _angka(entitas, "laba_ditahan_rp")
+    hpp = _angka(entitas, "hpp_rp")
+
+    if lancar and lancar_lb:
+        terhitung["fin_current_ratio"] = lancar / lancar_lb
+        # Perusahaan jasa yang memang tidak punya persediaan membuat quick ratio
+        # sama dengan current ratio, dan itu betul - bukan pos yang hilang.
+        terhitung["fin_quick_ratio"] = (lancar - (persediaan or 0.0)) / lancar_lb
+        if aset > 0:
+            terhitung["fin_wc_to_ta"] = (lancar - lancar_lb) / aset
+    if laba_ditahan is not None and aset > 0:
+        terhitung["fin_re_to_ta"] = laba_ditahan / aset
+    if piutang and penjualan > 0:
+        terhitung["fin_dso_hari"] = piutang / penjualan * 365.0
+    if persediaan and hpp:
+        terhitung["fin_dio_hari"] = persediaan / hpp * 365.0
+    # Laba bruto dikutip kalau ada barisnya; kalau tidak, selisih penjualan dan
+    # harga pokok memberi angka yang sama tanpa mengarang apa pun.
+    laba_kotor = _angka(entitas, "laba_kotor_rp")
+    if laba_kotor is None and hpp:
+        laba_kotor = penjualan - hpp
+    if laba_kotor is not None and penjualan > 0:
+        terhitung["fin_gross_margin"] = laba_kotor / penjualan
+
+    # Arus kas operasi: baris sungguhan kalau laporannya memuatnya, kalau tidak
+    # proxy `laba bersih + penyusutan` - definisi yang sama persis dipakai saat
+    # model dilatih, karena panel sumbernya pun tidak punya laporan arus kas.
+    cfo = _angka(entitas, "arus_kas_operasi_rp")
+    penyusutan = _angka(entitas, "penyusutan_rp")
+    if cfo is None and penyusutan is not None:
+        cfo = float(terhitung["fin_laba_bersih_rp"]) + penyusutan
+    if cfo is not None:
+        if ebitda > 0:
+            terhitung["fin_cfo_to_ebitda"] = cfo / ebitda
+        if liabilitas > 0:
+            terhitung["fin_cfo_to_liability"] = cfo / liabilitas
+    # Siklus modal kerja pada data latih adalah DSO + DIO tanpa DPO, dipotong di
+    # 720 hari. Ia hanya bermakna kalau kedua komponennya nyata; satu komponen
+    # nyata ditambah satu komponen median menghasilkan angka yang bukan keduanya.
+    if "fin_dso_hari" in terhitung and "fin_dio_hari" in terhitung:
+        terhitung["fin_siklus_modal_kerja_hari"] = float(np.clip(
+            terhitung["fin_dso_hari"] + terhitung["fin_dio_hari"], 0.0, 720.0
+        ))
+
+    # Tren hanya ada kalau laporannya memuat lebih dari satu periode. Fitur yang
+    # tidak terisi tetap jatuh ke median dan tetap disebut di `diisi_rujukan`.
+    terhitung.update(fitur_tren(entitas.get("riwayat_tahun") or {}))
 
     baris: dict[str, object] = {}
     diisi_rujukan: list[str] = []
@@ -411,11 +588,13 @@ class HasilPD:
     baris: pd.DataFrame
 
 
+# Warna pita risiko mengikuti palet aplikasi: tosca untuk sisi baik, jingga
+# yang makin gelap untuk sisi buruk (lihat lib/tampilan.py).
 BAND_WARNA = {
-    "Risiko rendah": "#1f8a5f",
-    "Risiko sedang": "#c58a17",
-    "Risiko tinggi": "#d4703a",
-    "Risiko sangat tinggi": "#c0392b",
+    "Risiko rendah": "#2A8080",
+    "Risiko sedang": "#40C0C0",
+    "Risiko tinggi": "#FF8000",
+    "Risiko sangat tinggi": "#7A3C00",
 }
 
 
@@ -517,7 +696,16 @@ def skor_lgd(entitas: dict) -> float | None:
         return None
     jenis, _, _ = _produk(entitas.get("jenis_fasilitas", ""), entitas.get("jenis_agunan", ""))
     penjualan = float(entitas.get("penjualan_tahunan") or 100e9)
-    skala = "menengah" if penjualan >= 50e9 else "kecil"
+    # Skala pegawai adalah variabelnya sendiri, bukan turunan penjualan. Nota
+    # analisa memuat jumlah karyawan; ambang mikro/kecil/menengah mengikuti
+    # kategori usaha yang dipakai data latih. Tanpa jumlah karyawan, penjualan
+    # dipakai sebagai penaksir - dan itu memang hanya penaksir.
+    karyawan = entitas.get("jumlah_karyawan")
+    if karyawan:
+        jumlah = int(karyawan)
+        skala = "menengah" if jumlah > 100 else "kecil" if jumlah > 20 else "mikro"
+    else:
+        skala = "menengah" if penjualan >= 50e9 else "kecil"
     nilai_agunan = float(entitas.get("nilai_agunan") or 0.0)
     plafon = float(entitas.get("plafon") or 1.0)
     baris = pd.DataFrame([{

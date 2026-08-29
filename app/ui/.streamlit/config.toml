@@ -1,12 +1,12 @@
-# Tema aplikasi. Warna dipilih supaya kontras teks terhadap latar tetap tinggi
-# pada layar proyektor ruang komite, tanpa memakai merah/hijau jenuh yang
-# melelahkan mata pada sesi demo yang panjang.
+# Tema aplikasi. Empat warna induk: jingga #FF8000, tosca #40C0C0, abu #808080,
+# putih #FFFFFF. Jingga dipakai Streamlit untuk tombol utama, fokus, dan slider;
+# sisa tampilan diatur lewat GAYA pada lib/tampilan.py.
 [theme]
 base = "light"
-primaryColor = "#1d5fa8"
-backgroundColor = "#f7f9fc"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#16212e"
+primaryColor = "#FF8000"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F6F7"
+textColor = "#2E3233"
 font = "sans serif"
 
 [server]
