@@ -5,3 +5,12 @@ numpy
 plotly
 networkx
 python-dotenv
+
+# Lapisan model: artefak ml/models dibaca langsung oleh lib/model_nyata.py.
+scikit-learn>=1.3
+xgboost>=2.0
+joblib
+pyarrow
+
+# Pembacaan PDF pada halaman 1 (lewat paket copilot, jalur pola maupun LLM).
+pypdf

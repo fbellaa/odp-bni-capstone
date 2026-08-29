@@ -279,6 +279,13 @@ def score_pd(pengajuan: dict) -> tuple[float, list[Kontribusi]]:
     pd = 1 / (1 + math.exp(-z))
     pd = float(min(max(pd, 0.0015), 0.60))
     komponen.sort(key=lambda k: abs(k.dampak), reverse=True)
+
+    # Bila model PD sungguhan sudah menghitung angkanya (lihat
+    # lib/model_nyata.py), angka itulah yang dipakai. Komponen di atas tetap
+    # dikembalikan sebagai pembanding naratif, sedangkan reason code yang
+    # ditampilkan halaman berasal dari SHAP model.
+    if pengajuan.get("pd_model") is not None:
+        pd = float(min(max(float(pengajuan["pd_model"]), 1e-4), 0.99))
     return pd, komponen
 
 
@@ -299,7 +306,10 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
     pd, kontribusi = score_pd(pengajuan)
     plafon = float(pengajuan["plafon"])
     tenor = int(pengajuan["tenor_bulan"])
-    lgd = estimate_lgd(pengajuan["jenis_agunan"], pengajuan.get("nilai_agunan", 0.0), plafon)
+    lgd = pengajuan.get("lgd_model")
+    lgd = float(lgd) if lgd is not None else estimate_lgd(
+        pengajuan["jenis_agunan"], pengajuan.get("nilai_agunan", 0.0), plafon
+    )
     ead = plafon
     el = pd * lgd * ead
 

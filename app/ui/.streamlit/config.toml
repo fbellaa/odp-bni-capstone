@@ -1,0 +1,16 @@
+# Tema aplikasi. Warna dipilih supaya kontras teks terhadap latar tetap tinggi
+# pada layar proyektor ruang komite, tanpa memakai merah/hijau jenuh yang
+# melelahkan mata pada sesi demo yang panjang.
+[theme]
+base = "light"
+primaryColor = "#1d5fa8"
+backgroundColor = "#f7f9fc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#16212e"
+font = "sans serif"
+
+[server]
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false

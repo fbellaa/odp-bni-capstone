@@ -18,15 +18,18 @@ import streamlit.components.v1 as components
 
 from lib import dummy_data
 from lib.format import miliar, persen, rupiah
-from lib.tampilan import setup_halaman, sidebar_status
+from lib.tampilan import AKSEN, AMBER, KORAL, MERAH, gaya_plot, hero, setup_halaman, sidebar_status
 
 setup_halaman("Dashboard BI", "📈")
 sidebar_status()
 
-st.title("6 · Dashboard BI")
-st.caption(
-    "Lapisan eksekutif dan operasional portofolio komersial disajikan melalui Metabase "
-    "di belakang reverse proxy."
+hero(
+    "05",
+    "Dashboard BI",
+    "Lapisan eksekutif dan operasional portofolio komersial disajikan melalui Metabase di "
+    "belakang reverse proxy. Metabase masih dalam pembangunan, jadi halaman ini menahan "
+    "tempatnya dengan pratinjau pengganti.",
+    [("penyaji", "Metabase"), ("status", "dalam pembangunan"), ("penyematan", "iframe /bi/")],
 )
 
 # Di susunan docker-compose, nginx meneruskan /bi/ ke metabase:3000.
@@ -63,12 +66,11 @@ bulanan = (
 c1, c2 = st.columns(2)
 with c1:
     fig = px.bar(bulanan, x="bulan", y="jumlah", color="keputusan",
-                 color_discrete_map={"SETUJU": "#1b7f4b", "SETUJU DENGAN SYARAT": "#b58900",
-                                     "PERLU PENYESUAIAN": "#c9721c", "TOLAK": "#c0392b"},
+                 color_discrete_map={"SETUJU": AKSEN, "SETUJU DENGAN SYARAT": AMBER,
+                                     "PERLU PENYESUAIAN": KORAL, "TOLAK": MERAH},
                  labels={"bulan": "Bulan", "jumlah": "Jumlah pengajuan", "keputusan": "Keputusan"})
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Pengajuan komersial per bulan menurut keputusan")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title="Pengajuan komersial per bulan menurut keputusan")
+    st.plotly_chart(gaya_plot(fig, 380), use_container_width=True)
 with c2:
     per_fasilitas = df.groupby("jenis_fasilitas", as_index=False).agg(
         limit=("limit_usulan", "sum"), pd_rata=("pd", "mean")
@@ -78,9 +80,8 @@ with c2:
                  orientation="h", color="pd_rata", color_continuous_scale="RdYlGn_r",
                  labels={"limit_miliar": "Usulan limit (Rp miliar)", "jenis_fasilitas": "",
                          "pd_rata": "PD rata"})
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Usulan penyaluran per jenis fasilitas")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title="Usulan penyaluran per jenis fasilitas")
+    st.plotly_chart(gaya_plot(fig, 380), use_container_width=True)
 
 c3, c4 = st.columns([3, 2])
 with c3:
@@ -91,9 +92,8 @@ with c3:
         color_continuous_scale="RdYlGn_r",
         labels={"limit_usulan": "Usulan limit", "pd": "PD"},
     )
-    fig.update_layout(height=470, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Komposisi usulan penyaluran per sektor dan rating internal")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title="Komposisi usulan penyaluran per sektor dan rating internal")
+    st.plotly_chart(gaya_plot(fig, 470), use_container_width=True)
     st.caption("Hanya pengajuan dengan usulan limit di atas nol yang masuk ke komposisi ini.")
 with c4:
     atas = grup.nlargest(8, "eksposur_grup").copy()
@@ -102,9 +102,8 @@ with c4:
                  orientation="h", color="porsi_bmpk", color_continuous_scale="RdYlGn_r",
                  labels={"eksposur_miliar": "Eksposur gabungan (Rp miliar)", "grup_usaha": "",
                          "porsi_bmpk": "Porsi BMPK"})
-    fig.update_layout(height=470, margin=dict(l=10, r=10, t=40, b=10),
-                      title="Delapan grup usaha dengan eksposur terbesar")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title="Delapan grup usaha dengan eksposur terbesar")
+    st.plotly_chart(gaya_plot(fig, 470), use_container_width=True)
     st.caption(
         f"Eksposur gabungan terbesar {miliar(grup['eksposur_grup'].max(), 0)} dari batas "
         f"{miliar(grup['eksposur_grup'].max() / max(grup['porsi_bmpk'].max(), 1e-9), 0)}."
