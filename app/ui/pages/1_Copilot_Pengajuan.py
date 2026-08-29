@@ -3,7 +3,7 @@
 Satu halaman untuk seluruh rantai pengajuan, gabungan dari dua halaman lama
 (copilot demo dan copilot lokal):
 
-    chat relationship manager + unggahan PDF
+    unggahan empat berkas PDF
         -> pembacaan dokumen (model bahasa lokal, atau sapuan pola bila luring)
         -> entitas gabungan
         -> agen memanggil tool perhitungan
@@ -32,11 +32,12 @@ from lib import dummy_data, memo as memo_lib, mock_engine, model_nyata as mn
 from lib import pipeline_copilot as pc
 from lib.format import cacah, miliar, persen
 from lib.tampilan import (
-    AMBER,
-    HIJAU,
-    MERAH,
-    PRIMER,
+    ABU,
+    JINGGA,
+    JINGGA_GELAP,
+    TOSCA_TUA,
     badge,
+    baris_status,
     badge_grade,
     badge_keputusan,
     hero,
@@ -54,7 +55,7 @@ from lib.tampilan import (
     sidebar_status,
 )
 
-setup_halaman("Copilot pengajuan", "🤖")
+setup_halaman("Copilot pengajuan")
 sidebar_status()
 
 status = pc.status_lengkap()
@@ -62,14 +63,14 @@ status = pc.status_lengkap()
 hero(
     "01",
     "Copilot pengajuan",
-    "Tulis ringkasan pengajuan seperti mengobrol, lampirkan laporan keuangan, data "
-    "kepemilikan, dan rekening koran. Copilot membaca berkas, memanggil tool perhitungan, "
-    "lalu menutupnya dengan skor model dan draft credit memo.",
+    "Unggah empat berkas pengajuan: laporan keuangan tiga periode, data kepemilikan, "
+    "rekening koran, dan nota analisa kredit. Copilot membaca berkas, memanggil tool "
+    "perhitungan, lalu menutupnya dengan skor model dan draft credit memo.",
     [
         ("model PD", "XGBoost" if status["pd"] else "belum ada"),
         ("model LGD", "XGBoost" if status["lgd"] else "belum ada"),
         ("baris ABT emas", cacah(status["baris_abt"])),
-        ("pembaca dokumen", "LLM lokal" if status["ollama"] else "sapuan pola"),
+        ("pembaca dokumen", "LLM lokal" if status["llm_siap"] else "sapuan pola"),
     ],
 )
 
@@ -81,18 +82,16 @@ with st.sidebar:
         ("Model PD", status["pd"], "ml/models/pd_champion.joblib"),
         ("Model LGD", status["lgd"], "ml/models/final_lgd_xgboost.pkl"),
         ("Data emas", status["gold"], "data/gold/*.parquet"),
-        ("Model bahasa lokal", status["ollama"], "jalankan `ollama serve`"),
+        ("Model bahasa lokal", status["llm_siap"],
+         "jalankan `ollama serve`" if not status["ollama"]
+         else "tarik model: `ollama pull " + " ".join(status.get("model_kurang") or []) + "`"),
         ("Index kebijakan", status["index"], "python -m copilot.rag.indeks"),
     ]:
-        st.markdown(
-            f"{'🟢' if siap else '⚪'} {label}"
-            + ("" if siap else f" <span class='tipis'>· {pesan_kurang}</span>"),
-            unsafe_allow_html=True,
-        )
+        st.markdown(baris_status(label, siap, pesan_kurang), unsafe_allow_html=True)
     for nama_model, pesan in (status.get("galat_muat") or {}).items():
-        st.error(f"Model {nama_model.upper()} gagal dimuat — `{pesan}`", icon="⛔")
+        st.error(f"Model {nama_model.upper()} gagal dimuat — `{pesan}`")
     if not status["copilot"]:
-        st.warning("Paket `copilot` tidak bisa diimpor — unggahan PDF dinonaktifkan.", icon="⚠️")
+        st.warning("Paket `copilot` tidak bisa diimpor — unggahan PDF dinonaktifkan.")
         st.code(status["galat_impor"] or "-", language="text")
     st.divider()
     kecepatan = st.select_slider("Kecepatan jejak agen", ["lambat", "sedang", "cepat"],
@@ -101,41 +100,21 @@ JEDA = {"lambat": 0.6, "sedang": 0.28, "cepat": 0.03}[kecepatan]
 
 # ------------------------------------------------------------------ masukan
 judul_bagian(
-    "Masukan pengajuan",
-    "Narasi dan berkas dibaca bersama. Angka pada berkas selalu menang atas angka pada narasi.",
+    "Berkas pengajuan",
+    "Seluruh masukan model datang dari berkas. Tidak ada angka yang diketik ulang, "
+    "sehingga tiap angka di memo bisa ditunjuk balik ke halaman PDF-nya.",
 )
 
-kol_chat, kol_berkas = st.columns([1.15, 1], gap="large")
+kol_unggah, kol_daftar = st.columns([1.15, 1], gap="large")
 
-with kol_chat:
-    st.markdown("**💬 Chat relationship manager**")
-    pilihan = st.selectbox(
-        "Contoh kasus",
-        options=list(range(len(dummy_data.CONTOH_PROMPT))),
-        format_func=lambda i: f"Kasus {i + 1} — {dummy_data.CONTOH_PROMPT[i][:70]}…",
-        label_visibility="collapsed",
-    )
-    teks = st.text_area(
-        "Ringkasan pengajuan",
-        value=dummy_data.CONTOH_PROMPT[pilihan],
-        height=190,
-        label_visibility="collapsed",
-        placeholder="Contoh: PT Sumber Logam Perkasa mau pinjam Rp 80 miliar tenor 5 tahun "
-                    "untuk modal kerja, penjualan Rp 240 miliar, agunan pabrik dan mesin…",
-    )
-    st.caption(
-        "Nominal, tenor, sektor, agunan, dan indikasi afiliasi diambil dari kalimat ini. "
-        "Silakan ketik kasus baru — urutan pemanggilan tool ikut berubah."
-    )
-
-with kol_berkas:
-    st.markdown("**📎 Dokumen pengajuan (PDF)**")
+with kol_unggah:
+    st.markdown("**Unggah berkas (PDF)**")
     unggahan = st.file_uploader(
         "Berkas PDF", type=["pdf"], accept_multiple_files=True,
         label_visibility="collapsed",
         disabled=not status["copilot"],
-        help="Laporan keuangan / home statement, data kepemilikan (pemegang saham), "
-             "dan rekening koran. Berkas hanya diproses di mesin ini.",
+        help="Laporan keuangan tiga periode, data kepemilikan, rekening koran, dan "
+             "nota analisa kredit. Berkas hanya diproses di mesin ini.",
     )
     jenis_manual: dict[str, str] = {}
     if unggahan:
@@ -148,33 +127,56 @@ with kol_berkas:
             )
             if pilih != "(tebak otomatis)":
                 jenis_manual[berkas_unggah.name] = pilih
-    else:
-        st.markdown(
-            "".join(
-                kartu(nama, "belum diunggah", warna="#8b97a6", ikon="📄")
-                for nama in pc.JENIS_DOKUMEN.values()
-            ),
-            unsafe_allow_html=True,
-        )
+    st.caption(
+        "Berkas yang tidak diunggah tidak membuat halaman gagal — field yang "
+        "seharusnya ada di sana ditandai `bawaan` dan memakai asumsi sistem."
+    )
 
-pakai_llm = status["ollama"] and status["copilot"]
+with kol_daftar:
+    # Kelengkapan ditampilkan sebelum tombol ditekan, bukan sesudahnya: analis
+    # perlu tahu berkas mana yang kurang selagi masih bisa menambahkannya.
+    st.markdown("**Kelengkapan berkas**")
+    terunggah = pc.jenis_unggahan(unggahan, jenis_manual) if unggahan else set()
+    st.markdown(
+        "".join(
+            kartu(nama, "sudah diunggah" if kunci in terunggah else "belum diunggah",
+                  warna=TOSCA_TUA if kunci in terunggah else ABU)
+            for kunci, nama in pc.JENIS_DOKUMEN.items()
+        ),
+        unsafe_allow_html=True,
+    )
+
+# Jalur LLM hanya dipilih kalau modelnya benar-benar ada. Ollama yang menjawab
+# tanpa model terpasang menghasilkan dokumen kosong tanpa galat di layar.
+pakai_llm = status["llm_siap"] and status["copilot"]
 kol_tombol, kol_opsi, kol_info = st.columns([1.1, 1.2, 2.4])
-jalankan = kol_tombol.button("▶ Jalankan copilot", type="primary", use_container_width=True)
+jalankan = kol_tombol.button("Jalankan copilot", type="primary", use_container_width=True)
 pakai_agen = kol_opsi.toggle(
     "Agen tool calling", value=pakai_llm, disabled=not pakai_llm,
     help="Menyalakan agen perhitungan berbasis model bahasa lokal. Tanpa Ollama, "
          "urutan tool tetap ditampilkan tetapi dijalankan secara deterministik.",
 )
+if status["ollama"] and not status["llm_siap"]:
+    st.warning(
+        "Ollama hidup tetapi model belum ditarik: "
+        f"`{', '.join(status.get('model_kurang') or [])}`. Dokumen dibaca dengan "
+        "sapuan pola. Jalankan `ollama pull "
+        f"{' '.join(status.get('model_kurang') or [])}` untuk memakai jalur model bahasa."
+    )
 kol_info.caption(
     ("Model bahasa lokal aktif — dokumen dibaca dan agen memanggil tool sungguhan."
      if pakai_llm else
-     "Ollama tidak menjawab. Dokumen dibaca dengan sapuan pola dan tool dijalankan "
-     "langsung tanpa model bahasa; skor PD, LGD, dan klaster tetap dari model asli.")
+     "Dokumen dibaca dengan sapuan pola dan tool dijalankan langsung tanpa model "
+     "bahasa; skor PD, LGD, dan klaster tetap dari model asli.")
 )
 
 # ----------------------------------------------------------------- eksekusi
 if jalankan:
-    application_id = f"APP-{abs(hash(teks)) % 9000 + 1000}"
+    # Nomor pengajuan datang dari nota analisa. Tanpa nota, nomor diturunkan dari
+    # nama berkas supaya satu berkas yang sama selalu menghasilkan nomor yang sama
+    # antar pemutaran demo.
+    kunci_berkas = "|".join(sorted(u.name for u in unggahan)) if unggahan else "kosong"
+    application_id = f"APP-{abs(hash(kunci_berkas)) % 9000 + 1000}"
     with st.status("Copilot mulai bekerja…", expanded=True) as kotak:
         # 1. dokumen
         dokumen = None
@@ -189,14 +191,16 @@ if jalankan:
                     f"{len(dokumen.fakta)} pos keuangan ditemukan"
                 )
             except Exception as exc:
-                st.warning(f"Pembacaan dokumen gagal: {exc}", icon="⚠️")
+                st.warning(f"Pembacaan dokumen gagal: {exc}")
         else:
-            st.write("**Langkah 1 · Tidak ada berkas diunggah — hanya narasi yang dibaca**")
+            st.write("**Langkah 1 · Tidak ada berkas diunggah — seluruh field memakai asumsi sistem**")
         time.sleep(JEDA)
 
         # 2. entitas
         st.write("**Langkah 2 · Ekstraksi entitas dan validasi skema**")
-        entitas, asal = pc.gabung_entitas(teks, dokumen)
+        entitas, asal = pc.entitas_dari_dokumen(dokumen)
+        if dokumen is not None and dokumen.pengajuan.get("nomor_pengajuan"):
+            application_id = str(dokumen.pengajuan["nomor_pengajuan"])
         st.json({k: v for k, v in entitas.items() if not isinstance(v, dict)}, expanded=False)
         time.sleep(JEDA)
 
@@ -231,7 +235,7 @@ if jalankan:
 
                 jejak_agen = ck.AgenPerhitungan().jalankan(konteks, saat_alat=catat)
             except Exception as exc:
-                st.warning(f"Agen tool calling tidak bisa dijalankan: {exc}", icon="⚠️")
+                st.warning(f"Agen tool calling tidak bisa dijalankan: {exc}")
         if jejak_agen is None:
             for i, langkah in enumerate(rencana, start=1):
                 st.write(f"`{langkah['tool']}({langkah['arg']})` — {langkah['keterangan']}")
@@ -251,7 +255,7 @@ if jalankan:
                 + (f" · klaster terdekat **{posisi.nama}**" if posisi else "")
             )
         else:
-            st.warning("Artefak model PD tidak ditemukan — skor memakai mesin demo.", icon="⚠️")
+            st.warning("Artefak model PD tidak ditemukan — skor memakai mesin demo.")
         if lgd_model is not None:
             fitur["lgd_model"] = lgd_model
 
@@ -267,7 +271,8 @@ if jalankan:
         )
 
     st.session_state.update(
-        copilot_input=teks, copilot_entitas=entitas, copilot_asal=asal,
+        copilot_berkas=[u.name for u in unggahan] if unggahan else [],
+        copilot_entitas=entitas, copilot_asal=asal,
         copilot_app_id=application_id, copilot_fitur=fitur, copilot_hasil=hasil,
         copilot_gerbang=gerbang, copilot_network=jaringan, copilot_dokumen=dokumen,
         copilot_pd=hasil_pd, copilot_lgd=lgd_model, copilot_posisi=posisi,
@@ -276,8 +281,7 @@ if jalankan:
 
 # ------------------------------------------------------------------ hasil
 if "copilot_hasil" not in st.session_state:
-    st.info("Tulis ringkasan pengajuan, lampirkan PDF bila ada, lalu tekan "
-            "**Jalankan copilot**.", icon="▶️")
+    st.info("Unggah berkas pengajuan, lalu tekan **Jalankan copilot**.")
     st.stop()
 
 entitas = st.session_state["copilot_entitas"]
@@ -311,10 +315,9 @@ if status_patuh == mock_engine.PENYESUAIAN:
     st.error(
         "Rekomendasi tidak lolos gerbang kepatuhan sehingga tidak ditampilkan sebagai usulan "
         "setuju. Lihat tab **Gerbang kepatuhan** untuk pasal dan penyesuaian angkanya.",
-        icon="⛔",
     )
 elif status_patuh == mock_engine.TELAAH:
-    st.warning("Gerbang kepatuhan memicu penelaahan struktur afiliasi sebelum akad.", icon="🔎")
+    st.warning("Gerbang kepatuhan memicu penelaahan struktur afiliasi sebelum akad.")
 
 kartu_hasil(hasil, entitas["plafon"])
 st.markdown("**Rasio keuangan terhadap ambang covenant kelas rating**")
@@ -346,28 +349,26 @@ with kol_meter:
                 "jadi perbedaan struktur agunan baru terasa pada rantai limit dan covenant."
             )
     else:
-        st.info("Model PD belum tersedia; angka pada kartu di atas berasal dari mesin demo.",
-                icon="ℹ️")
+        st.info("Model PD belum tersedia; angka pada kartu di atas berasal dari mesin demo.")
 
 with kol_peta:
     ruang = mn.ruang_klaster()
     if ruang is not None and posisi is not None:
         st.plotly_chart(plot_klaster(ruang, posisi), use_container_width=True)
         condong = posisi.condong_default
-        warna = MERAH if condong > 0.6 else (AMBER if condong > 0.45 else HIJAU)
+        warna = JINGGA_GELAP if condong > 0.6 else (JINGGA if condong > 0.45 else TOSCA_TUA)
         st.markdown(
             kartu(
                 f"Klaster terdekat: {posisi.nama}",
                 f"Tingkat default historis klaster ini <b>{persen(posisi.tingkat_default_klaster, 1)}</b>. "
                 f"Kecondongan ke kantong default <b>{persen(condong, 0)}</b> — dihitung dari jarak "
                 f"relatif terhadap klaster paling berisiko dan klaster paling sehat.",
-                warna=warna, ikon="🎯",
+                warna=warna,
             ),
             unsafe_allow_html=True,
         )
     else:
-        st.info("Ruang klaster belum bisa dibangun — data emas atau scikit-learn tidak tersedia.",
-                icon="ℹ️")
+        st.info("Ruang klaster belum bisa dibangun — data emas atau scikit-learn tidak tersedia.")
 
 # ------------------------------------------------------------------- tab
 tab_klaster, tab_gerbang, tab_alasan, tab_dokumen, tab_jaringan, tab_grup, \
@@ -379,7 +380,7 @@ tab_klaster, tab_gerbang, tab_alasan, tab_dokumen, tab_jaringan, tab_grup, \
 
 with tab_klaster:
     if ruang is None:
-        st.info("Ruang klaster belum tersedia.", icon="ℹ️")
+        st.info("Ruang klaster belum tersedia.")
     else:
         st.caption(
             f"K-Means atas {cacah(len(ruang.titik))}"
@@ -432,12 +433,15 @@ with tab_alasan:
 
 with tab_dokumen:
     if dokumen is None:
-        st.info("Tidak ada dokumen diunggah pada jalannya copilot terakhir.", icon="📄")
+        st.info("Tidak ada dokumen diunggah pada jalannya copilot terakhir.")
     else:
         jalur = "model bahasa lokal" if dokumen.jalur == "llm" else "sapuan pola tanpa LLM"
         st.caption(f"Dibaca lewat {jalur}.")
-        kol = st.columns(3)
-        for k, (jenis, ada) in zip(kol, dokumen.kelengkapan().items()):
+        # Jumlah kolom mengikuti jumlah jenis dokumen, bukan angka tetap: dengan
+        # tiga kolom, jenis keempat hilang diam-diam dari daftar kelengkapan.
+        kelengkapan = dokumen.kelengkapan()
+        kol = st.columns(len(kelengkapan))
+        for k, (jenis, ada) in zip(kol, kelengkapan.items()):
             k.metric(pc.JENIS_DOKUMEN[jenis], "ada" if ada else "kurang")
         if dokumen.per_berkas:
             st.dataframe(
@@ -471,18 +475,27 @@ with tab_dokumen:
             st.markdown("**Pengurus**")
             st.write(" · ".join(dokumen.pengurus))
         for catatan in dokumen.catatan:
-            st.warning(catatan, icon="⚠️")
+            st.warning(catatan)
 
         st.markdown("**Asal-usul angka yang dipakai model**")
+        # Yang berasal dari berkas ditampilkan lebih dulu, lalu yang memakai
+        # asumsi sistem. Bagian kedua itu yang paling perlu dilihat komite:
+        # ia menyebut persis field mana yang tidak ada di berkas mana pun.
+        dari_berkas = {k: s for k, s in asal.items()
+                       if s in ("dokumen", "turunan dokumen", "pengajuan")}
+        bawaan = [k for k, s in asal.items() if s == "bawaan"]
         st.markdown(
             " ".join(
-                badge(f"{kunci}: {sumber}",
-                      pc.SUMBER_WARNA.get(sumber, "#8b97a6"))
-                for kunci, sumber in asal.items()
-                if sumber == "dokumen"
+                badge(f"{kunci}: {sumber}", pc.SUMBER_WARNA.get(sumber, "#8b97a6"))
+                for kunci, sumber in dari_berkas.items()
             ) or "<span class='tipis'>Tidak ada angka yang berhasil diambil dari berkas.</span>",
             unsafe_allow_html=True,
         )
+        if bawaan:
+            st.caption(
+                f"{len(bawaan)} field memakai asumsi sistem karena tidak tertulis di "
+                f"berkas mana pun: {', '.join(sorted(bawaan))}."
+            )
 
 with tab_jaringan:
     skor = jaringan["skor"]
@@ -496,13 +509,13 @@ with tab_jaringan:
         for p in jaringan["pola"]:
             st.markdown(
                 kartu(p["deskripsi"], f"Bukti: {p['bukti']} · kode <code>{p['kode']}</code>",
-                      warna=AMBER, ikon="🔍"),
+                      warna=JINGGA),
                 unsafe_allow_html=True,
             )
         st.page_link("pages/3_Struktur_Grup_dan_Jaringan.py",
-                     label="Lihat subgraf struktur grup sebagai bukti", icon="🕸️")
+                     label="Lihat subgraf struktur grup sebagai bukti")
     else:
-        st.success("Tidak ada pola anomali struktur yang terpicu.", icon="✅")
+        st.success("Tidak ada pola anomali struktur yang terpicu.")
 
 with tab_grup:
     g1, g2, g3 = st.columns(3)
@@ -543,13 +556,13 @@ with tab_kebijakan:
             riwayat.append(("assistant", isi))
     else:
         st.info("Index kebijakan belum dibangun. Jalankan sekali:\n\n"
-                "```\npython -m copilot.rag.indeks\n```", icon="📚")
+                "```\npython -m copilot.rag.indeks\n```")
         st.markdown("**Kutipan kebijakan pada jalur demo**")
         for p in dummy_data.kutipan_kebijakan(entitas):
             st.markdown(
                 kartu(p["pasal"], f"{p['isi']}<br><span class='tipis'>kemiripan "
                                   f"{p['skor']:.2f} · {p.get('versi', '')}</span>",
-                      warna=PRIMER, ikon="📘"),
+                      warna=TOSCA_TUA),
                 unsafe_allow_html=True,
             )
 
@@ -559,7 +572,7 @@ with tab_tool:
         if jejak_agen.ada_kegagalan:
             st.warning(
                 f"{len(jejak_agen.rekaman.gagal())} pemanggilan tool gagal; angkanya tidak "
-                "masuk memo dan harus dihitung manual.", icon="⚠️")
+                "masuk memo dan harus dihitung manual.")
         st.dataframe(
             pd.DataFrame([
                 {"Tool": j.nama, "Status": "berhasil" if j.berhasil else "gagal",
@@ -589,7 +602,7 @@ with tab_memo:
         gerbang=gerbang,
     )
     st.download_button(
-        "⬇ Unduh draft credit memo (.md)",
+        "Unduh draft credit memo (.md)",
         data=teks_memo.encode("utf-8"),
         file_name=f"credit_memo_{application_id}.md",
         mime="text/markdown", type="primary",

@@ -10,6 +10,21 @@ Susunan halaman mengikuti proposal bagian 9.3.
 > `lib/dummy_data.py` dan `lib/mock_engine.py`, dan halaman selalu menyebutkan
 > bagian mana yang demo.
 
+## Palet
+
+| Warna | Kode | Tugas |
+| --- | --- | --- |
+| Jingga | `#FF8000` | tindakan (tombol utama), peringatan, sisi buruk sebuah ukuran |
+| Tosca | `#40C0C0` | struktur: kepala halaman, batang grafik, sisi baik sebuah ukuran |
+| Abu | `#808080` | teks sekunder, garis, kategori netral |
+| Putih | `#FFFFFF` | permukaan kartu dan tabel |
+
+Tingkat risiko selalu dibaca sebagai satu tanjakan tosca → jingga → jingga
+gelap, bukan hijau-kuning-merah, sehingga urutannya tetap terbaca saat dicetak
+hitam putih atau dilihat mata yang sulit membedakan merah dan hijau. Seluruh
+nilainya didefinisikan di `lib/tampilan.py`; tidak ada halaman yang menuliskan
+kode warna sendiri.
+
 ## Batas segmen yang dipakai antarmuka
 
 Batas pada proposal 3.5 bukan keterangan tambahan — ia menjadi rentang slider,

@@ -81,9 +81,11 @@ BATAS_GRADE = [
     (1.000, "CCC"),
 ]
 
+# Skala rating dibaca sebagai satu tanjakan warna: tosca (kelas atas) menuju
+# jingga gelap (kelas bawah). Nilainya kembar dengan palet lib/tampilan.py.
 WARNA_GRADE = {
-    "AAA": "#1b7f4b", "AA": "#1b7f4b", "A": "#3d8f3d",
-    "BBB": "#b58900", "BB": "#c9721c", "B": "#c0392b", "CCC": "#8e1b1b",
+    "AAA": "#1A5252", "AA": "#2A8080", "A": "#40C0C0",
+    "BBB": "#808080", "BB": "#FFA94D", "B": "#FF8000", "CCC": "#7A3C00",
 }
 
 # Pagu kewenangan per rating internal (proposal 3.2: kewenangan pemutus).

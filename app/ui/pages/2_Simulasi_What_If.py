@@ -17,18 +17,19 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from lib import dummy_data, mock_engine, model_nyata as mn
+from lib import pipeline_copilot as pc
 from lib.format import kali, miliar, persen
 from lib.tampilan import (
-    AKSEN,
-    AMBER,
-    MERAH,
-    PRIMER,
+    JINGGA,
+    JINGGA_GELAP,
+    TOSCA,
+    TOSCA_TUA,
     badge_grade,
     badge_keputusan,
-    kartu_hasil,
     gaya_plot,
     hero,
     judul_bagian,
+    kartu_hasil,
     kartu_rasio,
     panel_gerbang,
     plot_bmpk,
@@ -37,7 +38,7 @@ from lib.tampilan import (
     sidebar_status,
 )
 
-setup_halaman("Simulasi what-if", "🎚️")
+setup_halaman("Simulasi what-if")
 sidebar_status()
 
 hero(
@@ -54,9 +55,11 @@ dasar = st.session_state.get("copilot_fitur")
 if dasar is None:
     st.info(
         "Belum ada pengajuan dari halaman Copilot. Simulasi dimulai dari kasus contoh.",
-        icon="ℹ️",
     )
-    dasar = dummy_data.ekstraksi_entitas(dummy_data.CONTOH_PROMPT[0])
+    # Halaman ini tidak lagi punya narasi untuk diekstraksi; kasus awalnya
+    # sekarang adalah entitas bawaan yang sama dengan yang dipakai Copilot saat
+    # sebuah field tidak tertulis di berkas mana pun.
+    dasar = dict(pc.BAWAAN_ENTITAS)
     dasar.update(
         utang_berbunga_eksisting=dasar["plafon"] * 0.25, konversi_ebitda_kas=0.76,
         utilisasi_plafon=0.72, buyer_concentration_hhi=0.32,
@@ -213,7 +216,7 @@ b4.metric("Δ Limit usulan", miliar(hasil.limit_usulan, 0),
 
 if hasil.catatan:
     for c in hasil.catatan:
-        st.warning(c, icon="⚠️")
+        st.warning(c)
 
 st.divider()
 kol_gerbang, kol_bmpk = st.columns([3, 2])
@@ -276,15 +279,15 @@ hasil_kurva = [mock_engine.recommend_limit_pricing(dengan_model(v)) for v in var
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=tampil, y=[h.pd * 100 for h in hasil_kurva],
-                         name="PD (%)", mode="lines+markers", line=dict(color=MERAH, width=3)))
+                         name="PD (%)", mode="lines+markers", line=dict(color=JINGGA_GELAP, width=3)))
 fig.add_trace(go.Scatter(x=tampil, y=[h.pricing * 100 for h in hasil_kurva],
-                         name="Pricing (%)", mode="lines+markers", line=dict(color=PRIMER, width=3)))
+                         name="Pricing (%)", mode="lines+markers", line=dict(color=TOSCA_TUA, width=3)))
 fig.add_trace(go.Scatter(x=tampil, y=[h.expected_loss / 1e9 for h in hasil_kurva],
                          name="Expected loss (Rp miliar)", mode="lines+markers",
-                         line=dict(color=AMBER, width=3), yaxis="y2"))
+                         line=dict(color=JINGGA, width=3), yaxis="y2"))
 fig.add_trace(go.Scatter(x=tampil, y=[h.limit_usulan / 1e9 for h in hasil_kurva],
                          name="Limit usulan (Rp miliar)", mode="lines",
-                         line=dict(color=AKSEN, dash="dot", width=3), yaxis="y2"))
+                         line=dict(color=TOSCA, dash="dot", width=3), yaxis="y2"))
 fig.update_layout(
     xaxis_title=label, yaxis_title="Persen",
     yaxis2=dict(title="Rp miliar", overlaying="y", side="right", showgrid=False),
