@@ -1,0 +1,50 @@
+{
+  "model": "XGBoost",
+  "version": "2.0.0",
+  "files": {
+    "ews_xgboost_champion.joblib": {
+      "sha256": "ec404f336a735e9dc35f291305515c7ce6b2ee2a9707888ebdfdf3c4946d8dda",
+      "size_bytes": 732923
+    },
+    "ews_metadata.json": {
+      "sha256": "83089d34fa8636bad5517fe6e147e7807dd33f733998738bfb85205209dc5b29",
+      "size_bytes": 3450
+    },
+    "ews_feature_schema.json": {
+      "sha256": "cb8df04482f235e1cad29e1e6b41310f98f823fd7479bd6284369cba00340b8d",
+      "size_bytes": 5139
+    },
+    "ews_decision_policy.json": {
+      "sha256": "ec24a37cf893d3e786035cd831064f90c42699748f8b5dcf7cf90dfc74dfb380",
+      "size_bytes": 894
+    },
+    "ews_metrics.json": {
+      "sha256": "17aca97ffd0fcdb527635ac239df520945c62a82308dc7102bb73dec1d11367d",
+      "size_bytes": 3206
+    },
+    "ews_feature_importance.csv": {
+      "sha256": "467757fcae1bc330efab3507c5c155e943e692410db6ee28448524225eda9e1a",
+      "size_bytes": 1777
+    },
+    "ews_reference_stats.json": {
+      "sha256": "5da9cfa5e21c006062b8763595349991819ce75ad0894f0799f91f35a76f3e95",
+      "size_bytes": 6470
+    },
+    "ews_risk_band_validation.csv": {
+      "sha256": "97b96a4cd160daafdea7b28600ebbc576c1ee35ac793a5138b2e86f1fbdea0c0",
+      "size_bytes": 376
+    },
+    "ews_requirements.txt": {
+      "sha256": "a080c01a8d3c33182d6f62d74f36de1776b496ac529c5115359c630cc0c9660e",
+      "size_bytes": 76
+    },
+    "ews_feature_builder.py": {
+      "sha256": "4eeadc3e8e101f9d4ba5738ff851625c1eb85764c19cc7e7151247ba7dc83ddb",
+      "size_bytes": 3141
+    },
+    "ews_predictor.py": {
+      "sha256": "2f0fb612f5dd8902dd70e417d215cd1460f0ecb4e4d81ec971e8130f1afe0867",
+      "size_bytes": 8456
+    }
+  }
+}

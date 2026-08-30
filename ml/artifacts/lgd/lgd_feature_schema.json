@@ -1,0 +1,125 @@
+{
+  "model": "LGD_XGBOOST",
+  "model_version": "1.0.0",
+  "target": "y_lgd_realisasi",
+  "number_of_features": 7,
+  "features": {
+    "app_tenor_bulan": {
+      "type": "numeric",
+      "dtype": "int64",
+      "nullable": false,
+      "min": 1.0,
+      "max": 461.0,
+      "accepted_aliases": []
+    },
+    "app_porsi_penjaminan": {
+      "type": "numeric",
+      "dtype": "Float64",
+      "nullable": false,
+      "min": 0.1219,
+      "max": 1.0,
+      "accepted_aliases": []
+    },
+    "app_jenis_fasilitas": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "known_categories": [
+        "investasi",
+        "modal_kerja"
+      ],
+      "accepted_aliases": []
+    },
+    "app_sektor_kbli": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "known_categories": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S"
+      ],
+      "accepted_aliases": []
+    },
+    "app_skala_pegawai": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "known_categories": [
+        "besar",
+        "kecil",
+        "korporasi",
+        "menengah",
+        "mikro"
+      ],
+      "accepted_aliases": []
+    },
+    "app_perusahaan_baru": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "known_categories": [
+        "False",
+        "True"
+      ],
+      "accepted_aliases": []
+    },
+    "app_dokumen_ringkas": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "known_categories": [
+        "False",
+        "True"
+      ],
+      "accepted_aliases": []
+    }
+  },
+  "input_aliases": {
+    "app_tenor_bulan": "app_tenor_bulan_sba"
+  },
+  "feature_order": [
+    "app_tenor_bulan",
+    "app_porsi_penjaminan",
+    "app_jenis_fasilitas",
+    "app_sektor_kbli",
+    "app_skala_pegawai",
+    "app_perusahaan_baru",
+    "app_dokumen_ringkas"
+  ],
+  "problem_type": "regression",
+  "prediction_type": "direct_xgboost_regression",
+  "calibrated": false,
+  "agent_usage": {
+    "tool_name": "predict_lgd",
+    "python_entrypoint": "ml.inference.lgd_predictor.predict_lgd_tool",
+    "payload_shape": {
+      "features": {
+        "<feature_name>": "<extracted_or_derived_value>"
+      }
+    },
+    "minimum_completeness_for_scoring": 0.8,
+    "rules": [
+      "Use model feature names whenever possible.",
+      "Raw aliases are normalized deterministically.",
+      "Do not invent values for missing features.",
+      "If a value is unavailable, omit it or pass null.",
+      "Tool returns insufficient_data when completeness is too low."
+    ]
+  }
+}

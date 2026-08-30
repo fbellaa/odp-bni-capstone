@@ -1,0 +1,110 @@
+{
+  "0": {
+    "cluster_id": 0,
+    "segment": "Low Risk / Non-default-like",
+    "description": "Relatively healthier financial and underwriting profile; empirically associated with lower observed default rate.",
+    "production_fit_n": 2854,
+    "production_default_rate": 0.010130246020260492,
+    "profile": [
+      {
+        "feature": "app_skor_kredit",
+        "median": 74.69,
+        "mean": 73.17865101611764
+      },
+      {
+        "feature": "app_pricing_bps",
+        "median": 746.0,
+        "mean": 740.3528381219342
+      },
+      {
+        "feature": "app_rating_internal_num",
+        "median": 4.0,
+        "mean": 3.4453398738612475
+      },
+      {
+        "feature": "fin_debt_to_ebitda",
+        "median": 2.7281438259360646,
+        "mean": 3.126769019441968
+      },
+      {
+        "feature": "fin_der",
+        "median": 0.710545393896072,
+        "mean": 1.1240004930687568
+      },
+      {
+        "feature": "fin_icr",
+        "median": 4.188307314084875,
+        "mean": 11.729517297823664
+      },
+      {
+        "feature": "fin_roa",
+        "median": 0.054628538052244435,
+        "mean": 0.056951099154952306
+      },
+      {
+        "feature": "fin_wc_to_ta",
+        "median": 0.2546958674998011,
+        "mean": 0.2795034265849254
+      },
+      {
+        "feature": "fin_cfo_to_liability",
+        "median": 0.2154649341678911,
+        "mean": 0.3124530013423341
+      }
+    ]
+  },
+  "1": {
+    "cluster_id": 1,
+    "segment": "High Risk / Default-like",
+    "description": "Higher-risk financial and underwriting profile; empirically associated with higher observed default rate.",
+    "production_fit_n": 1329,
+    "production_default_rate": 0.07859922178988327,
+    "profile": [
+      {
+        "feature": "app_skor_kredit",
+        "median": 24.03,
+        "mean": 24.3261324303988
+      },
+      {
+        "feature": "app_pricing_bps",
+        "median": 871.0,
+        "mean": 877.1075996990219
+      },
+      {
+        "feature": "app_rating_internal_num",
+        "median": 5.0,
+        "mean": 5.37020316027088
+      },
+      {
+        "feature": "fin_debt_to_ebitda",
+        "median": 8.891454556454276,
+        "mean": 16.118961130156887
+      },
+      {
+        "feature": "fin_der",
+        "median": 1.9895833333333333,
+        "mean": 4.361515202539115
+      },
+      {
+        "feature": "fin_icr",
+        "median": -0.7016835046121328,
+        "mean": -3.905902913208303
+      },
+      {
+        "feature": "fin_roa",
+        "median": -0.15315115394369772,
+        "mean": -0.37342321001214973
+      },
+      {
+        "feature": "fin_wc_to_ta",
+        "median": 0.14226519337016572,
+        "mean": 0.16345463676990987
+      },
+      {
+        "feature": "fin_cfo_to_liability",
+        "median": -0.14514452869404565,
+        "mean": -0.7100102822317846
+      }
+    ]
+  }
+}

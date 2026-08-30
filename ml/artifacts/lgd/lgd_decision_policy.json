@@ -1,0 +1,27 @@
+{
+  "model": "LGD_XGBOOST",
+  "model_version": "1.0.0",
+  "output_name": "Loss Given Default",
+  "output_definition": "Estimated proportion of exposure that would be lost if default occurs.",
+  "valid_range": {
+    "minimum": 0.0,
+    "maximum": 1.0
+  },
+  "post_processing": {
+    "method": "clip",
+    "rule": "LGD predictions are clipped to [0, 1]"
+  },
+  "risk_band": {
+    "Low": "LGD < 0.25",
+    "Medium": "0.25 <= LGD < 0.50",
+    "High": "0.50 <= LGD < 0.75",
+    "Very High": "LGD >= 0.75"
+  },
+  "risk_band_note": "Risk bands are interpretive/dashboard bands from the modeling notebook, not an official bank policy threshold.",
+  "prediction_type": "direct_xgboost_regression",
+  "calibration": {
+    "applied": false,
+    "calibrator": null,
+    "note": "No secondary calibration model is applied. Portfolio calibration/bias summary is evaluation only and does not transform individual LGD predictions."
+  }
+}

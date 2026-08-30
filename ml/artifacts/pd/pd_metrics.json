@@ -1,0 +1,32 @@
+{
+  "model": "PD_12M",
+  "champion_name": "PD_XGB_BASELINE",
+  "calibrated": false,
+  "prediction_type": "raw_xgboost_probability",
+  "evaluation_stage": "OOT before final production refit",
+  "oot_rows": 379,
+  "oot_events": 13,
+  "oot_bad_rate": 0.03430079155672823,
+  "oot_metrics": {
+    "roc_auc": 0.7860445565363599,
+    "pr_auc": 0.1313319376375554,
+    "brier_score": 0.08892073786703472,
+    "log_loss": 0.2865765767449248,
+    "threshold": 0.26563698053359985,
+    "accuracy": 0.7862796833773087,
+    "precision": 0.09523809523809523,
+    "recall": 0.6153846153846154,
+    "f1": 0.16494845360824742,
+    "f2": 0.29411764705882354,
+    "alert_rate": 0.22163588390501318,
+    "TN": 290,
+    "FP": 76,
+    "FN": 5,
+    "TP": 8
+  },
+  "risk_cutoffs": {
+    "q50": 0.07617848739027977,
+    "q80": 0.2921055912971497,
+    "q95": 0.7059564173221586
+  }
+}

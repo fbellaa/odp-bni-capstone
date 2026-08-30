@@ -1,0 +1,102 @@
+{
+  "model_name": "Loss Given Default",
+  "champion_name": "LGD_XGBOOST",
+  "model_family": "XGBoost Regressor",
+  "model_version": "1.0.0",
+  "problem_type": "regression",
+  "target": "y_lgd_realisasi",
+  "target_definition": "Realized Loss Given Default",
+  "output_range": [
+    0.0,
+    1.0
+  ],
+  "number_of_features": 7,
+  "training": {
+    "rows": 156610,
+    "target_mean": 0.6188533820125709,
+    "target_median": 0.6356
+  },
+  "external_test": {
+    "rows": 214,
+    "target_mean": 0.6377887850467285,
+    "target_median": 0.6467
+  },
+  "features": [
+    "app_tenor_bulan",
+    "app_porsi_penjaminan",
+    "app_jenis_fasilitas",
+    "app_sektor_kbli",
+    "app_skala_pegawai",
+    "app_perusahaan_baru",
+    "app_dokumen_ringkas"
+  ],
+  "numeric_features": [
+    "app_tenor_bulan",
+    "app_porsi_penjaminan"
+  ],
+  "categorical_features": [
+    "app_jenis_fasilitas",
+    "app_sektor_kbli",
+    "app_skala_pegawai",
+    "app_perusahaan_baru",
+    "app_dokumen_ringkas"
+  ],
+  "feature_mapping": {
+    "app_tenor_bulan": "app_tenor_bulan_sba",
+    "app_porsi_penjaminan": "app_porsi_penjaminan",
+    "app_jenis_fasilitas": "app_jenis_fasilitas",
+    "app_sektor_kbli": "app_sektor_kbli",
+    "app_skala_pegawai": "app_skala_pegawai",
+    "app_perusahaan_baru": "app_perusahaan_baru",
+    "app_dokumen_ringkas": "app_dokumen_ringkas"
+  },
+  "post_processing": "clip prediction to [0, 1]",
+  "hyperparameters": {
+    "objective": "reg:squarederror",
+    "base_score": null,
+    "booster": null,
+    "callbacks": null,
+    "colsample_bylevel": null,
+    "colsample_bynode": null,
+    "colsample_bytree": 0.9,
+    "device": null,
+    "early_stopping_rounds": null,
+    "enable_categorical": false,
+    "eval_metric": null,
+    "feature_types": null,
+    "gamma": null,
+    "grow_policy": null,
+    "importance_type": null,
+    "interaction_constraints": null,
+    "learning_rate": 0.03,
+    "max_bin": null,
+    "max_cat_threshold": null,
+    "max_cat_to_onehot": null,
+    "max_delta_step": null,
+    "max_depth": 5,
+    "max_leaves": null,
+    "min_child_weight": 30,
+    "missing": NaN,
+    "monotone_constraints": null,
+    "multi_strategy": null,
+    "n_estimators": 900,
+    "n_jobs": -1,
+    "num_parallel_tree": null,
+    "random_state": 42,
+    "reg_alpha": 0.3,
+    "reg_lambda": 30,
+    "sampling_method": null,
+    "scale_pos_weight": null,
+    "subsample": 0.9,
+    "tree_method": "hist",
+    "validate_parameters": null,
+    "verbosity": null
+  },
+  "prediction_type": "direct_xgboost_regression",
+  "calibrated": false,
+  "calibrator": null,
+  "portfolio_calibration_is_diagnostic_only": true,
+  "agent_contract_file": "lgd_agent_contract.json",
+  "feature_schema_file": "lgd_feature_schema.json",
+  "python_entrypoint": "ml.inference.lgd_predictor.predict_lgd_tool"
+}

@@ -1,0 +1,20 @@
+{
+  "model": "XGBoost",
+  "model_version": "2.0.0",
+  "output": "6-month EWS default risk score",
+  "target": "y_default_6bln",
+  "alert_policy": {
+    "threshold": 0.03570814058184624,
+    "selection_population": "Training out-of-fold predictions",
+    "minimum_recall": 0.8,
+    "selection_rule": "Among thresholds satisfying minimum recall, choose the threshold with highest precision."
+  },
+  "risk_band": {
+    "method": "Quantiles of training out-of-fold probability",
+    "LOW": "score < 0.01670264",
+    "MEDIUM": "0.01670264 <= score < 0.06147529",
+    "HIGH": "score >= 0.06147529"
+  },
+  "risk_band_note": "Risk band is an operational / interpretive ranking rule from training OOF scores, not an official bank policy threshold.",
+  "probability_note": "EWS score is used primarily as a ranking/alert score. It should not automatically be interpreted as a regulatory calibrated PD."
+}

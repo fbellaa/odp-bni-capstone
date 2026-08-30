@@ -1,0 +1,246 @@
+{
+  "model": "XGBoost",
+  "model_version": "2.0.0",
+  "target": "y_default_6bln",
+  "number_of_features": 26,
+  "number_of_raw_features": 13,
+  "number_of_engineered_features": 13,
+  "features": {
+    "app_rating_internal": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "engineered": false,
+      "known_categories": [
+        "A",
+        "AA",
+        "AAA",
+        "B",
+        "BB",
+        "BBB",
+        "C",
+        "CC",
+        "CCC",
+        "D"
+      ]
+    },
+    "app_sektor_kbli": {
+      "type": "categorical",
+      "dtype": "object",
+      "nullable": false,
+      "engineered": false,
+      "known_categories": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S"
+      ]
+    },
+    "app_skor_kredit": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.02,
+      "max": 99.98
+    },
+    "graf_group_exposure_share": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.000851,
+      "max": 0.437981
+    },
+    "perilaku_covenant_dilanggar": {
+      "type": "numeric",
+      "dtype": "int64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 3.0
+    },
+    "perilaku_dpd": {
+      "type": "numeric",
+      "dtype": "int64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 178.0
+    },
+    "perilaku_dpd_maks_3bln": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 178.0
+    },
+    "perilaku_kol_maks_3bln": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": false,
+      "min": 1.0,
+      "max": 4.0
+    },
+    "perilaku_kol_memburuk": {
+      "type": "numeric",
+      "dtype": "bool",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "perilaku_kolektibilitas": {
+      "type": "numeric",
+      "dtype": "int64",
+      "nullable": false,
+      "engineered": false,
+      "min": 1.0,
+      "max": 4.0
+    },
+    "perilaku_pemakaian_plafon": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.14999359549122582,
+      "max": 1.0
+    },
+    "perilaku_restrukturisasi": {
+      "type": "numeric",
+      "dtype": "bool",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "perilaku_umur_fasilitas_hari": {
+      "type": "numeric",
+      "dtype": "int64",
+      "nullable": false,
+      "engineered": false,
+      "min": 0.0,
+      "max": 1626.0
+    },
+    "app_rating_ord": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": true,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "dpd_gap_vs_max3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": true,
+      "min": 0.0,
+      "max": 119.0
+    },
+    "kol_gap_vs_max3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": true,
+      "min": 0.0,
+      "max": 2.0
+    },
+    "dpd_delta_1m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -119.0,
+      "max": 146.0
+    },
+    "dpd_delta_3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -119.0,
+      "max": 178.0
+    },
+    "util_delta_1m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "util_delta_3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "covenant_delta_1m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -2.0,
+      "max": 2.0
+    },
+    "covenant_delta_3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -2.0,
+      "max": 2.0
+    },
+    "kol_delta_1m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -2.0,
+      "max": 2.0
+    },
+    "kol_delta_3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": true,
+      "engineered": true,
+      "min": -2.0,
+      "max": 3.0
+    },
+    "util_avg_3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": true,
+      "min": 0.14999359549122582,
+      "max": 1.0
+    },
+    "util_vs_avg3m": {
+      "type": "numeric",
+      "dtype": "float64",
+      "nullable": false,
+      "engineered": true,
+      "min": -1.1102230246251565e-16,
+      "max": 1.1102230246251565e-16
+    }
+  }
+}

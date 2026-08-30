@@ -1,0 +1,299 @@
+{
+  "model": "PD_RISK_CLUSTERING_KMEANS",
+  "model_version": "1.0.0",
+  "number_of_features": 37,
+  "final_refit_population": "train_plus_oot",
+  "preprocessing": {
+    "special_missing_value": "\\N -> NaN",
+    "rating_encoding": {
+      "AAA": 1,
+      "AA": 2,
+      "A": 3,
+      "BBB": 4,
+      "BB": 5,
+      "B": 6,
+      "CCC": 7,
+      "CC": 8,
+      "C": 9,
+      "D": 10
+    },
+    "winsorization": "1st-99th percentile based on final TRAIN + OOT population",
+    "imputation": "median",
+    "scaling": "StandardScaler",
+    "dimensionality_reduction": "PCA retaining original configured variance",
+    "clustering": "KMeans k=2"
+  },
+  "features": {
+    "app_skor_kredit": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 2.0282,
+      "clip_upper": 99.2718,
+      "input_type": "numeric"
+    },
+    "app_pricing_bps": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 613.0,
+      "clip_upper": 988.0,
+      "input_type": "numeric"
+    },
+    "app_rating_internal": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 2.0,
+      "clip_upper": 7.0,
+      "input_type": "ordinal_categorical",
+      "mapping": {
+        "AAA": 1,
+        "AA": 2,
+        "A": 3,
+        "BBB": 4,
+        "BB": 5,
+        "B": 6,
+        "CCC": 7,
+        "CC": 8,
+        "C": 9,
+        "D": 10
+      }
+    },
+    "app_coverage_ratio": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 1.006182,
+      "clip_upper": 1.791236,
+      "input_type": "numeric"
+    },
+    "app_plafon_thd_penjualan": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.12340865507394194,
+      "clip_upper": 0.4463329371426345,
+      "input_type": "numeric"
+    },
+    "app_tenor_bulan": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 12.0,
+      "clip_upper": 120.0,
+      "input_type": "numeric"
+    },
+    "app_revolving": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 1.0,
+      "input_type": "numeric"
+    },
+    "app_ada_agunan_likuid": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 1.0,
+      "input_type": "numeric"
+    },
+    "app_ada_jaminan_silang": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 1.0,
+      "input_type": "numeric"
+    },
+    "fin_current_ratio": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.26361781637934617,
+      "clip_upper": 16.77932078457284,
+      "input_type": "numeric"
+    },
+    "fin_quick_ratio": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.1651362994748607,
+      "clip_upper": 15.305534123737395,
+      "input_type": "numeric"
+    },
+    "fin_der": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.05864888409045742,
+      "clip_upper": 27.44322745721159,
+      "input_type": "numeric"
+    },
+    "fin_der_yoy": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -0.8124892001542008,
+      "clip_upper": 9.02118988679914,
+      "input_type": "numeric"
+    },
+    "fin_der_delta_3thn": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -6.882754724463671,
+      "clip_upper": 16.595500554603806,
+      "input_type": "numeric"
+    },
+    "fin_debt_to_ebitda": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": 0.279124959494722,
+      "clip_upper": 67.02448155737684,
+      "input_type": "numeric"
+    },
+    "fin_debt_to_ebitda_yoy": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": -0.8500959041827888,
+      "clip_upper": 4.221426512965111,
+      "input_type": "numeric"
+    },
+    "fin_debt_to_ebitda_delta_3thn": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": -25.674931370993484,
+      "clip_upper": 33.88231565988182,
+      "input_type": "numeric"
+    },
+    "fin_icr": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -63.305684939476144,
+      "clip_upper": 105.0264951136394,
+      "input_type": "numeric"
+    },
+    "fin_icr_yoy": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -29.513903746385868,
+      "clip_upper": 60.169246518007064,
+      "input_type": "numeric"
+    },
+    "fin_icr_delta_3thn": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -89.73249492316478,
+      "clip_upper": 90.17385328142059,
+      "input_type": "numeric"
+    },
+    "fin_cfo_to_liability": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -5.401119477106528,
+      "clip_upper": 2.2097613573436115,
+      "input_type": "numeric"
+    },
+    "fin_cfo_to_ebitda": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": -5.888779178338003,
+      "clip_upper": 3.490642546901833,
+      "input_type": "numeric"
+    },
+    "fin_roa": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -1.925842465565397,
+      "clip_upper": 0.32157615736061834,
+      "input_type": "numeric"
+    },
+    "fin_wc_to_ta": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -0.37330401933277146,
+      "clip_upper": 0.8500580125765022,
+      "input_type": "numeric"
+    },
+    "fin_re_to_ta": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -20.444871304458605,
+      "clip_upper": 0.9521878807197092,
+      "input_type": "numeric"
+    },
+    "fin_operating_margin": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -3.924296687130843,
+      "clip_upper": 0.4499373508746484,
+      "input_type": "numeric"
+    },
+    "fin_gross_margin": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -1.6256639863251687,
+      "clip_upper": 0.9308551921195595,
+      "input_type": "numeric"
+    },
+    "fin_growth_penjualan": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": -0.6017018126059224,
+      "clip_upper": 1.7875858600979526,
+      "input_type": "numeric"
+    },
+    "graf_buyer_concentration_hhi": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": 0.33878552277648044,
+      "clip_upper": 1.0,
+      "input_type": "numeric"
+    },
+    "graf_supplier_concentration_hhi": {
+      "model_dtype": "float",
+      "nullable": true,
+      "clip_lower": 0.2544416574606739,
+      "clip_upper": 1.0,
+      "input_type": "numeric"
+    },
+    "graf_group_exposure_share": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 0.253156,
+      "input_type": "numeric"
+    },
+    "graf_degree": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 2.0,
+      "clip_upper": 62.18000000000029,
+      "input_type": "numeric"
+    },
+    "graf_weighted_degree": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.6931471805599453,
+      "clip_upper": 282.9181078759006,
+      "input_type": "numeric"
+    },
+    "graf_betweenness": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 0.006177889375083837,
+      "input_type": "numeric"
+    },
+    "graf_pagerank": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 1.0518077965603295e-05,
+      "clip_upper": 0.0003407032255100844,
+      "input_type": "numeric"
+    },
+    "graf_shared_attribute_degree": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 19.0,
+      "input_type": "numeric"
+    },
+    "graf_circular_payment_flag": {
+      "model_dtype": "float",
+      "nullable": false,
+      "clip_lower": 0.0,
+      "clip_upper": 0.0,
+      "input_type": "numeric"
+    }
+  }
+}

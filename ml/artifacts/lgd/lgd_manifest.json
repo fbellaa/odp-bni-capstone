@@ -1,0 +1,62 @@
+{
+  "model": "LGD_XGBOOST",
+  "version": "1.0.0",
+  "agent_contract_version": "1.0",
+  "prediction_type": "direct_xgboost_regression",
+  "calibrated": false,
+  "python_entrypoint": "ml.inference.lgd_predictor.predict_lgd_tool",
+  "files": {
+    "lgd_champion.joblib": {
+      "sha256": "4e67bd1b81f13b60218ff5c2044e76d11a762fbac77f80a9fd3db73ef0649529",
+      "size_bytes": 2114095
+    },
+    "lgd_metadata.json": {
+      "sha256": "cd59612c33790303bc250c30fec6d9e6278ddc547d504b13c09f2985329c935a",
+      "size_bytes": 2789
+    },
+    "lgd_feature_schema.json": {
+      "sha256": "92afae5370c17af53f22f36fd656420df640779bd656ee04d4ee367e97fa7e89",
+      "size_bytes": 2794
+    },
+    "lgd_agent_contract.json": {
+      "sha256": "9465ee8603895e89f494d207882c00ae2a4b2132748831f11674c131fc34dfb0",
+      "size_bytes": 4410
+    },
+    "lgd_input_template.json": {
+      "sha256": "122fe6279d0c2b448d048efe7e3231088a140ec2c0882f7bb3d344550fee7626",
+      "size_bytes": 244
+    },
+    "lgd_decision_policy.json": {
+      "sha256": "d46f86bcaebf967d14c60fd916faf93e4a03fafb76f08869b02521b2ae8abbb7",
+      "size_bytes": 921
+    },
+    "lgd_metrics.json": {
+      "sha256": "e93f9896032a7f1d99ae9393de5709763c19f3c13e44b6281b0f5173898f0518",
+      "size_bytes": 613
+    },
+    "lgd_feature_importance.csv": {
+      "sha256": "e2fb3904cb1d2081073b04c7a1fbf2284b60e1602a930a9c9dff4b92c4e7b80d",
+      "size_bytes": 476
+    },
+    "lgd_reference_stats.json": {
+      "sha256": "2e6633551f09c02231a92080888fb8fe3546790daa00a025eaf4f350a7966b59",
+      "size_bytes": 1785
+    },
+    "lgd_requirements.txt": {
+      "sha256": "e600ca3b3af4ff60a759c02908be8ceb8d93b4c422e13587488f6faf46bf14ff",
+      "size_bytes": 89
+    },
+    "lgd_predictor.py": {
+      "sha256": "98e76460db8f29159fa5f0f5d99fa716e79ecc55aaad35b05c14356ab9010c2a",
+      "size_bytes": 14507
+    },
+    "lgd_facility_performance.csv": {
+      "sha256": "ab5e7d618c95a145254be6e3f63a61988aba1783822e901e3a46d24637e1a143",
+      "size_bytes": 172
+    },
+    "lgd_employee_scale_performance.csv": {
+      "sha256": "44ae69e91b9a61b0d8809f7388e0ca3287de5f57920c633572edb0ef68bd0cdf",
+      "size_bytes": 222
+    }
+  }
+}
