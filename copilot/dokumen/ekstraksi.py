@@ -21,6 +21,7 @@ from copilot.dokumen.skema import (
     Akta,
     BerkasPengajuan,
     DokumenTerstruktur,
+    FormPengajuan,
     JenisDokumen,
     LaporanKeuangan,
     RekeningKoran,
@@ -85,12 +86,26 @@ Ambil identitas perusahaan, alamat, susunan pengurus, dan pemegang saham.
 - `persentase` pemegang saham diisi dalam persen (25.5 berarti 25,5 persen), bukan
   pecahan.
 """,
+    "pengajuan": """Dokumen ini nota analisa pengajuan kredit - dokumen internal bank.
+
+Ambil isian formulirnya apa adanya. Jangan menilai, menyimpulkan, atau
+melengkapi field yang tidak tertulis.
+
+- `plafon_diminta` dan nilai agunan dalam rupiah penuh, bukan singkatan.
+- `agunan` diisi satu entri per baris agunan, lengkap dengan taksasi dan
+  likuidasinya bila tertulis.
+- `rating_internal` dan `skor_kredit` datang dari blok penilaian unit risiko.
+  Bila blok itu tidak ada, biarkan null - JANGAN menebak ratingnya sendiri.
+- `dokumen_lengkap` bernilai false hanya bila dokumen menyatakan berkas ringkas
+  atau tidak lengkap.
+""",
 }
 
 SKEMA_PER_JENIS: dict[JenisDokumen, type] = {
     "rekening_koran": RekeningKoran,
     "laporan_keuangan": LaporanKeuangan,
     "akta": Akta,
+    "pengajuan": FormPengajuan,
 }
 
 
@@ -119,6 +134,16 @@ def baca_dokumen(
             "salah satu dari rekening koran, laporan keuangan, atau akta."
         )
         return DokumenTerstruktur(jenis="tidak_dikenali", sumber=sumber, catatan=catatan)
+
+    # Jenis yang dikenali penanda tetapi belum punya perintah ekstraksi berhenti
+    # di sini dengan catatan, bukan dengan KeyError yang menggagalkan pembacaan
+    # SELURUH berkas pengajuan hanya karena satu dokumen.
+    if jenis not in SKEMA_PER_JENIS or jenis not in PERINTAH:
+        catatan.append(
+            f"Jenis '{jenis}' dikenali tetapi belum punya perintah ekstraksi; "
+            "isinya tidak dibaca lewat model bahasa."
+        )
+        return DokumenTerstruktur(jenis=jenis, sumber=sumber, catatan=catatan)
 
     kelompok = baca_pdf.kelompokkan(halaman)
     skema = SKEMA_PER_JENIS[jenis]
@@ -157,6 +182,8 @@ def baca_dokumen(
         catatan.append(f"{len(hasil.rekening_koran.mutasi)} baris mutasi terbaca.")
     elif jenis == "laporan_keuangan":
         hasil.laporan_keuangan = _gabung_lapkeu(bagian)
+    elif jenis == "pengajuan":
+        hasil.pengajuan = _gabung_pengajuan(bagian)
     else:
         hasil.akta = _gabung_akta(bagian)
     return hasil
@@ -237,6 +264,35 @@ def _gabung_lapkeu(bagian: list[LaporanKeuangan]) -> LaporanKeuangan:
                 if nilai is not None:
                     setattr(hasil, nama_field, nilai)
     return hasil
+
+
+def _gabung_pengajuan(bagian: list[FormPengajuan]) -> FormPengajuan:
+    """Satukan potongan nota analisa.
+
+    Nota hampir selalu satu halaman, jadi biasanya hanya ada satu potongan.
+    Penggabungan tetap ditulis supaya nota berlampiran tidak kehilangan isian
+    yang muncul di halaman kedua.
+
+    Agunan dikumpulkan dari seluruh potongan dan dide-duplikasi berdasarkan
+    nama - potongan yang tumpang tindih tidak boleh menggandakan nilai agunan,
+    karena itu langsung menggeser LGD.
+    """
+    agunan, terlihat = [], set()
+    for b in bagian:
+        for a in b.agunan:
+            kunci = (a.jenis or "").strip().lower()
+            if kunci and kunci not in terlihat:
+                terlihat.add(kunci)
+                agunan.append(a)
+
+    gabung = FormPengajuan(agunan=agunan)
+    for nama in FormPengajuan.model_fields:
+        if nama == "agunan":
+            continue
+        nilai = _pertama(getattr(b, nama) for b in bagian)
+        if nilai is not None:
+            setattr(gabung, nama, nilai)
+    return gabung
 
 
 def _gabung_akta(bagian: list[Akta]) -> Akta:

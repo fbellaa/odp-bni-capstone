@@ -53,6 +53,14 @@ PENANDA: dict[JenisDokumen, list[tuple[str, int]]] = {
         ("arus kas", 3), ("penjualan bersih", 3), ("pendapatan usaha", 3),
         ("ebitda", 2), ("aset lancar", 3),
     ],
+    # Nota analisa dipindai lebih dulu dengan penanda yang khas dokumen internal
+    # bank. Bobotnya tinggi karena frasa ini tidak muncul di berkas nasabah.
+    "pengajuan": [
+        ("nota analisa pengajuan", 6), ("nota analisa kredit", 6),
+        ("permohonan kredit", 4), ("plafon diminta", 5), ("rating internal", 4),
+        ("skor kredit internal", 5), ("tujuan penggunaan", 3),
+        ("unit kerja", 2), ("relationship manager", 3),
+    ],
     "akta": [
         ("akta pendirian", 5), ("notaris", 4), ("anggaran dasar", 5),
         ("perseroan terbatas", 3), ("pemegang saham", 4), ("direktur utama", 3),

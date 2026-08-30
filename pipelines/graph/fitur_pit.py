@@ -49,7 +49,7 @@ def _bobot_sebanding(g: nx.Graph) -> None:
 
     `bobot` di GOLD_GRAPH_EDGES berbeda satuan per rel_type:
 
-        memiliki         porsi kepemilikan   0,05 - 0,95
+        memiliki         porsi kepemilikan   0,0004 - 1,00
         menjabat_di      penanda             1,0
         berbagi_atribut  penanda             1,0
         beralamat_di     penanda             1,0
@@ -63,8 +63,8 @@ def _bobot_sebanding(g: nx.Graph) -> None:
     magnitudo (median 1,1e-05, maksimum 3,3e13).
 
     log1p menahan ekornya tanpa membalik urutan: rupiah jatuh ke 21-30, penanda
-    ke 0,69, kepemilikan ke 0,05-0,67. Transfer besar tetap berbobot lebih tinggi
-    daripada satu jabatan, tapi tidak lagi menenggelamkannya.
+    ke 0,69, kepemilikan ke 0,0004-0,69. Transfer besar tetap berbobot lebih
+    tinggi daripada satu jabatan, tapi tidak lagi menenggelamkannya.
     """
     for _, _, data in g.edges(data=True):
         data["w"] = float(np.log1p(max(data.get("bobot", 0.0), 0.0)))

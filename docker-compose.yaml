@@ -1,0 +1,195 @@
+services:
+  warehouse:
+    image: postgres:16
+    container_name: bni_warehouse
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-banking_dw}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - warehouse_data:/var/lib/postgresql/data
+      - ./pipelines/sql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-banking} -d ${POSTGRES_DB:-banking_dw}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  prefect-server:
+    image: prefecthq/prefect:3-python3.11
+    container_name: bni_prefect_server
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_HOME: /data
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_UI_URL: http://localhost:4200
+      # Tanpa ini UI menyusun alamat API dari PREFECT_SERVER_API_HOST di
+      # atas, jadi browser disuruh menembak http://0.0.0.0:4200/api -
+      # alamat 'dengarkan semua interface' yang tidak bisa dituju klien.
+      # Halamannya terbuka, tapi semua permintaan datanya gagal.
+      PREFECT_UI_API_URL: http://localhost:4200/api
+    ports:
+      - "4200:4200"
+    volumes:
+      - prefect-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: pipelines/Dockerfile
+    container_name: bni_pipeline
+    # Pekerjaan sekali jalan, bukan layanan - dan pekerjaan yang MENIMPA
+    # data/gold. Tanpa profil, `docker compose up` polos akan membangun ulang
+    # seluruh warehouse tanpa diminta, dengan N_DEBITUR bawaan yang berbeda
+    # dari yang dipakai membangun data yang ada. Profil membuatnya hanya jalan
+    # bila memang diminta:
+    #     docker compose --profile batch run --rm pipeline
+    profiles: ["batch"]
+    depends_on:
+      warehouse:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+    environment:
+      # Prefect
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_PROJECT_DIR: /opt/banking-copilot
+
+      # PostgreSQL
+      POSTGRES_HOST: warehouse
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-banking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-banking_dw}
+
+      # Pipeline configuration
+      LOAD_TO_POSTGRES: ${LOAD_TO_POSTGRES:-1}
+      N_DEBITUR: ${N_DEBITUR:-6000}
+      PIPELINE_SEED: ${PIPELINE_SEED:-42}
+      SAMPLE_MODE: ${SAMPLE_MODE:-0}
+
+    volumes:
+      - ./data:/opt/banking-copilot/data
+
+    # Default: jalankan pipeline sekali lalu berhenti
+    command: python -m pipelines.flows.main_flow
+
+  metabase_db:
+    image: postgres:16
+    container_name: bni_metabase_db
+    environment:
+      POSTGRES_USER: metabase
+      POSTGRES_PASSWORD: metabase_secret
+      POSTGRES_DB: metabase_app
+    volumes:
+      - metabase_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U metabase -d metabase_app"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: bni_metabase
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase_app
+      MB_DB_PORT: 5432
+      MB_DB_USER: metabase
+      MB_DB_PASS: metabase_secret
+      MB_DB_HOST: metabase_db
+    depends_on:
+      metabase_db:
+        condition: service_healthy
+      warehouse:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- copilot
+  # Ollama sebagai container. OPSIONAL - aktif hanya dengan `--profile ollama`.
+  #
+  # Di Windows, cara paling sedikit risikonya justru TIDAK memakai layanan ini:
+  # pasang Ollama lewat installer resmi (ia otomatis memakai GPU tanpa
+  # konfigurasi apa pun), lalu biarkan `ui` menghubunginya lewat
+  # host.docker.internal. Passthrough GPU ke dalam container butuh Docker
+  # Desktop dengan backend WSL2 dan driver NVIDIA yang cocok - satu titik gagal
+  # tambahan yang tidak perlu ditanggung saat demo.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bni_ollama
+    profiles: ["ollama"]
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Model bertahan antar `docker compose down`. Tanpa ini, tiap start ulang
+      # berarti mengunduh ulang beberapa GB.
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bni_ui
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    environment:
+      # Bawaannya menunjuk Ollama di HOST, bukan di jaringan compose. Untuk
+      # memakai layanan `ollama` di atas, setel OLLAMA_HOST=http://ollama:11434
+      # (lihat catatan pada layanan itu).
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      COPILOT_PROFIL: ${COPILOT_PROFIL:-terpadu}
+      COPILOT_MODEL_SAHABAT: ${COPILOT_MODEL_SAHABAT:-}
+      COPILOT_MAKS_PUTARAN: ${COPILOT_MAKS_PUTARAN:-8}
+      METABASE_EMBED_URL: ${METABASE_EMBED_URL:-}
+    extra_hosts:
+      # Di Linux host.docker.internal tidak ada dengan sendirinya; baris ini
+      # membuatnya menunjuk host. Di Windows dan macOS ia diabaikan.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # data/gold untuk penelusuran afiliasi, data/index untuk RAG, dan
+      # data/unggahan untuk PDF yang diunggah saat demo. Di-mount, bukan
+      # disalin ke image: 182 MB tabel gold tidak layak masuk lapisan image,
+      # dan index yang dibangun di dalam container harus tetap ada sesudahnya.
+      - ./data:/opt/banking-copilot/data
+    restart: unless-stopped
+
+volumes:
+  warehouse_data:
+  prefect-data:
+  metabase_data:
+  ollama_models:

@@ -327,3 +327,47 @@ def test_model_lgd_bisa_dilatih_lalu_diterapkan():
     prediksi = model.predict(terap[FITUR_LGD_TERAPAN])
     assert len(prediksi) == len(terap)
     assert ((prediksi >= 0) & (prediksi <= 1.5)).all(), "prediksi LGD di luar rentang wajar"
+
+
+# ------------------------------------------------- ambang segmen komersial
+def test_saring_segmen_komersial_membuang_neraca_ganjil():
+    """Ambangnya inklusif: tepat 10x lolos, di atasnya tidak."""
+    from pipelines.exports.abt import saring_segmen_komersial
+
+    contoh = pd.DataFrame(
+        {
+            "application_id": [1, 2, 3],
+            "fin_total_aset_rp": [50e9, 100e9, 900e9],
+            "fin_penjualan_rp": [100e9, 10e9, 10e9],
+        }
+    )
+    hasil = saring_segmen_komersial(contoh, "uji")
+    assert hasil["application_id"].tolist() == [1, 2]
+
+
+@pytest.mark.parametrize("nama", ["abt_pd", "abt_pengajuan_ditolak"])
+def test_abt_pd_bebas_neraca_di_luar_segmen_komersial(nama):
+    """Regresi: ambang ini pernah hilang dari kode dan hanya tersisa di
+    parameter_build, sehingga data/gold tidak bisa direproduksi dari repo.
+
+    Penskalaan rupiah menjangkar pada penjualan, jadi tanpa ambang ini ada
+    debitur beromzet puluhan miliar dengan total aset ratusan triliun - rasio
+    sampai 73.000x - yang merusak seluruh blok fin_.
+    """
+    df = read_table("gold", nama)
+    rasio = df["fin_total_aset_rp"] / df["fin_penjualan_rp"]
+    di_luar = int((rasio > settings.aset_thd_penjualan_maks).sum())
+    assert di_luar == 0, f"{di_luar} baris di atas ambang, maks {rasio.max():.1f}x"
+
+
+def test_populasi_abt_pd_lebih_kecil_dari_fasilitas():
+    """Selisihnya harus datang dari ambang, bukan dari join yang bocor.
+
+    Ambang dipasang di lapisan ABT saja, jadi fact_fasilitas memang lebih besar
+    - dan itu yang membuat angka portofolio di lapisan BI tidak sama dengan
+    populasi model PD.
+    """
+    fasilitas = read_table("gold", "fact_fasilitas", columns=["facility_id"])
+    abt = read_table("gold", "abt_pd", columns=["facility_id"])
+    assert set(abt["facility_id"]) <= set(fasilitas["facility_id"])
+    assert 0 < len(fasilitas) - len(abt) < 0.1 * len(fasilitas)

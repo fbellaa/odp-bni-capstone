@@ -6,6 +6,13 @@ Seluruh perhitungan di sini adalah *placeholder deterministik*, bukan model.
 Tujuannya hanya agar halaman what-if benar-benar responsif terhadap masukan
 selama model asli (PD / LGD / network risk) belum tersedia.
 
+Sebagian angka kebijakan di bawah sudah tidak lagi dipakai apa adanya:
+`lib/parameter_kebijakan.py` menurunkannya dari lapisan emas (recovery agunan
+dari `fact_agunan`, ambang covenant dari `fact_covenant`, matriks kewenangan
+dari `fact_pengajuan`) lalu menaruhnya di `KALIBRASI`. Konstanta yang tertulis
+di sini tinggal cadangan untuk lingkungan tanpa data emas, dan pembacaannya
+selalu lewat fungsi pengakses supaya jelas mana yang terpakai.
+
 Ketika layanan FastAPI sudah jalan, ganti isi fungsi di modul ini dengan
 pemanggilan endpoint `/api/score_pd`, `/api/estimate_lgd`,
 `/api/recommend_limit_pricing`, `/api/score_network_risk`, dan
@@ -30,15 +37,22 @@ SEGMEN = {
     "saldo_maks": 50e9,
 }
 
-# Asumsi biaya yang dipakai pada rantai perhitungan keputusan (proposal 3.2).
-# Segmen komersial memakai biaya dana dan margin yang lebih tipis dari mikro.
-BIAYA_DANA = 0.0475
-BIAYA_OPERASIONAL = 0.0060
-MARGIN_TARGET = 0.0225
-PRICING_MIN = 0.0700
+# Batas bawah dan atas pricing tetap kebijakan internal. Tumpukan biaya dana,
+# biaya operasional, dan margin target yang dulu menyusun suku bunga sudah tidak
+# dipakai: pricing sekarang dibaca dari grid per pita pada `PRICING_PER_PITA`,
+# yang dikalibrasi ke `pricing_bps` historis. Tumpukan itu memberi harga 116
+# sampai 618 bps di atas praktik buku ini.
+PRICING_MIN = 0.0600
 PRICING_MAX = 0.1600
 
-# Batas maksimum pemberian kredit satu grup debitur pada demo ini.
+# Parameter kebijakan hasil kalibrasi atas data emas. Diisi sekali per proses
+# oleh `parameter_kebijakan.terapkan()`; selama kosong, seluruh pengakses jatuh
+# ke konstanta di bawah. Modul ini sengaja TIDAK mengimpor kalibratornya -
+# ketergantungannya satu arah, dan mesin tetap jalan tanpa data emas.
+KALIBRASI: dict = {}
+
+# Batas maksimum pemberian kredit satu grup debitur, cadangan untuk lingkungan
+# tanpa `fact_eksposur_grup`. Angka nyata datang per grup lewat pengajuan.
 BATAS_BMPK_GRUP = 750e9
 
 # Recovery rate per jenis agunan komersial -> LGD = 1 - recovery, disesuaikan
@@ -69,46 +83,68 @@ FASILITAS_REVOLVING = {
     "Bank garansi proyek",
 }
 
-# Skala rating internal komersial. Ambang dinyatakan sebagai batas atas PD
-# 12 bulan untuk setiap kelas.
-BATAS_GRADE = [
-    (0.008, "AAA"),
-    (0.016, "AA"),
-    (0.030, "A"),
-    (0.055, "BBB"),
-    (0.095, "BB"),
-    (0.185, "B"),
-    (1.000, "CCC"),
+# Pita risiko model PD. Menggantikan kelas rating huruf yang dulu diturunkan
+# dari PD lewat ambang buatan modul ini sendiri: hurufnya tidak pernah datang
+# dari model mana pun, sementara pita ini adalah kontrak artefak PD
+# (`pd_decision_policy.json`, empat pita atas kuantil skor portofolio).
+#
+# Empat, bukan tiga. Melebur "sangat tinggi" ke "tinggi" akan menyatukan 142
+# pengajuan bertingkat default 47% dengan 639 pengajuan bertingkat default 7%.
+URUTAN_PITA = [
+    "Risiko rendah",
+    "Risiko sedang",
+    "Risiko tinggi",
+    "Risiko sangat tinggi",
 ]
 
-# Skala rating dibaca sebagai satu tanjakan warna: tosca (kelas atas) menuju
-# jingga gelap (kelas bawah). Nilainya kembar dengan palet lib/tampilan.py.
-WARNA_GRADE = {
-    "AAA": "#1A5252", "AA": "#2A8080", "A": "#40C0C0",
-    "BBB": "#808080", "BB": "#FFA94D", "B": "#FF8000", "CCC": "#7A3C00",
+# Ambang cadangan bila kalibrasi belum dipasang: kuantil skor model atas
+# portofolio pengembangan, sama dengan isi berkas kebijakan PD.
+CUTOFF_PITA_BAWAAN = {"q50": 0.0762, "q80": 0.2921, "q95": 0.7060}
+
+# Pita dibaca sebagai satu tanjakan warna, kembar dengan palet lib/tampilan.py.
+WARNA_PITA = {
+    "Risiko rendah": "#2A8080",
+    "Risiko sedang": "#40C0C0",
+    "Risiko tinggi": "#FF8000",
+    "Risiko sangat tinggi": "#7A3C00",
 }
 
-# Pagu kewenangan per rating internal (proposal 3.2: kewenangan pemutus).
-PAGU_GRADE = {
-    "AAA": 150e9, "AA": 150e9, "A": 130e9, "BBB": 100e9,
-    "BB": 70e9, "B": 30e9, "CCC": 0.0,
+# Pagu limit per pita. Cadangan; angka sebenarnya datang dari persentil 95
+# plafon yang pernah disetujui pada tiap pita (lihat parameter_kebijakan).
+PAGU_PER_PITA = {
+    "Risiko rendah": 90e9,
+    "Risiko sedang": 90e9,
+    "Risiko tinggi": 80e9,
+    "Risiko sangat tinggi": 70e9,
 }
 
-# Covenant keuangan wajib per kelas rating (proposal 5.3 dan daftar covenant standar).
-COVENANT_PER_RATING = {
-    "AAA": {"der_maks": 2.50, "icr_min": 2.00, "dscr_min": 1.25, "uji": "Semesteran"},
-    "AA": {"der_maks": 2.50, "icr_min": 2.00, "dscr_min": 1.25, "uji": "Semesteran"},
-    "A": {"der_maks": 2.25, "icr_min": 2.25, "dscr_min": 1.25, "uji": "Semesteran"},
-    "BBB": {"der_maks": 2.25, "icr_min": 2.25, "dscr_min": 1.25, "uji": "Triwulanan"},
-    "BB": {"der_maks": 2.00, "icr_min": 2.50, "dscr_min": 1.35, "uji": "Triwulanan"},
-    "B": {"der_maks": 1.75, "icr_min": 3.00, "dscr_min": 1.50, "uji": "Bulanan"},
-    "CCC": {"der_maks": 1.50, "icr_min": 3.50, "dscr_min": 1.75, "uji": "Bulanan"},
+# Suku bunga dasar per pita. Cadangan; angka sebenarnya median `pricing_bps`
+# yang pernah ditagih pada tiap pita.
+PRICING_PER_PITA = {
+    "Risiko rendah": 0.0726,
+    "Risiko sedang": 0.0801,
+    "Risiko tinggi": 0.0872,
+    "Risiko sangat tinggi": 0.0906,
 }
 
-# Tingkat pertanggungan agunan minimum per kelas rating.
+# Covenant keuangan wajib per pita. Cadangan; ambang sebenarnya dari
+# `fact_covenant` yang dijoin ke pita.
+COVENANT_PER_PITA = {
+    "Risiko rendah": {"der_maks": 2.00, "icr_min": 3.00, "dscr_min": 1.25, "uji": "Semesteran"},
+    "Risiko sedang": {"der_maks": 2.50, "icr_min": 2.50, "dscr_min": 1.25, "uji": "Triwulanan"},
+    "Risiko tinggi": {"der_maks": 3.00, "icr_min": 2.00, "dscr_min": 1.35, "uji": "Triwulanan"},
+    "Risiko sangat tinggi": {"der_maks": 3.50, "icr_min": 1.50, "dscr_min": 1.50, "uji": "Bulanan"},
+}
+
+# Tingkat pertanggungan agunan minimum per pita. Ini kebijakan internal dan
+# TIDAK diturunkan dari data: lapisan emas hanya memuat pertanggungan yang
+# menyertai fasilitas (median 1,33 dan praktis rata di seluruh pita), bukan
+# ambang minimum yang disyaratkan.
 COVERAGE_MIN = {
-    "AAA": 1.00, "AA": 1.00, "A": 1.10, "BBB": 1.25,
-    "BB": 1.25, "B": 1.50, "CCC": 1.50,
+    "Risiko rendah": 1.10,
+    "Risiko sedang": 1.25,
+    "Risiko tinggi": 1.35,
+    "Risiko sangat tinggi": 1.50,
 }
 
 # Matriks kewenangan komite komersial berdasarkan besaran limit.
@@ -119,6 +155,50 @@ MATRIKS_KEWENANGAN = [
 ]
 
 DSCR_MIN_KEBIJAKAN = 1.25
+
+
+# --------------------------------------------------------------------------
+# Pengakses parameter kebijakan
+# --------------------------------------------------------------------------
+# Seluruh perhitungan di bawah membaca kebijakan lewat empat fungsi ini, bukan
+# langsung ke konstanta. Dengan begitu satu tempat saja yang tahu apakah sebuah
+# angka datang dari tabel atau dari asumsi bawaan.
+def recovery_agunan(jenis: str) -> float:
+    peta = KALIBRASI.get("recovery_agunan") or RECOVERY_AGUNAN
+    return float(peta.get(jenis, RECOVERY_AGUNAN.get(jenis, 0.20)))
+
+
+def covenant_untuk(pita: str) -> dict:
+    peta = KALIBRASI.get("covenant_per_pita") or COVENANT_PER_PITA
+    return dict(peta.get(pita, COVENANT_PER_PITA[pita]))
+
+
+def pricing_dasar(pita: str) -> float:
+    """Suku bunga dasar pita, sebelum batas bawah dan atas kebijakan."""
+    peta = KALIBRASI.get("pricing_per_pita") or PRICING_PER_PITA
+    return float(peta.get(pita, PRICING_PER_PITA[pita]))
+
+
+def pagu_untuk(pita: str) -> float:
+    peta = KALIBRASI.get("pagu_per_pita") or PAGU_PER_PITA
+    return float(peta.get(pita, PAGU_PER_PITA[pita]))
+
+
+def cutoff_pita() -> dict:
+    return dict(KALIBRASI.get("cutoffs_pd") or CUTOFF_PITA_BAWAAN)
+
+
+def matriks_kewenangan() -> list:
+    return list(KALIBRASI.get("matriks_kewenangan") or MATRIKS_KEWENANGAN)
+
+
+def batas_bmpk(pengajuan: dict | None = None) -> float:
+    """Batas BMPK grup: dari pengajuan bila grupnya sudah teridentifikasi."""
+    if pengajuan:
+        nilai = pengajuan.get("batas_bmpk_rp")
+        if nilai:
+            return float(nilai)
+    return float(BATAS_BMPK_GRUP)
 
 # Batas sumbangan satu fitur terhadap log-odds (meniru binning scorecard WOE).
 BATAS_DAMPAK = 0.60
@@ -134,6 +214,8 @@ class Kontribusi:
 @dataclass
 class HasilSkor:
     pd: float
+    # Nama `grade` dipertahankan supaya pembaca lama tidak pecah, tetapi isinya
+    # kini nama pita risiko model PD, bukan huruf rating.
     grade: str
     lgd: float
     ead: float
@@ -151,6 +233,11 @@ class HasilSkor:
     komite_pemutus: str
     eksposur_grup: float
     ruang_bmpk: float
+    # Batas BMPK yang benar-benar dipakai perhitungan ini: per grup dari
+    # `fact_eksposur_grup` bila grupnya teridentifikasi, kalau tidak angka
+    # cadangan. Ikut dibawa supaya tampilan dan memo tidak menebak sendiri.
+    batas_bmpk: float = BATAS_BMPK_GRUP
+    sumber_bmpk: str = "asumsi porsi segmen"
     kontribusi: list = field(default_factory=list)
     catatan: list = field(default_factory=list)
     covenant: dict = field(default_factory=dict)
@@ -167,7 +254,7 @@ def angsuran_anuitas(pokok: float, tenor_bulan: int, rate_tahunan: float) -> flo
 
 def estimate_lgd(jenis_agunan: str, nilai_agunan: float, plafon: float) -> float:
     """LGD = 1 - recovery efektif, dibatasi 5% sampai 90%."""
-    recovery_dasar = RECOVERY_AGUNAN.get(jenis_agunan, 0.20)
+    recovery_dasar = recovery_agunan(jenis_agunan)
     coverage = 0.0 if plafon <= 0 else min(nilai_agunan / plafon, 1.5)
     recovery_efektif = recovery_dasar * min(coverage / 1.0, 1.0)
     return float(min(max(1 - recovery_efektif, 0.05), 0.90))
@@ -175,15 +262,16 @@ def estimate_lgd(jenis_agunan: str, nilai_agunan: float, plafon: float) -> float
 
 def komite_pemutus(limit: float, grade: str) -> str:
     """Tingkat komite yang berwenang memutus (proposal 5.3 — matriks kewenangan)."""
-    tingkat = len(MATRIKS_KEWENANGAN) - 1
-    for i, (batas, _) in enumerate(MATRIKS_KEWENANGAN):
+    matriks = matriks_kewenangan()
+    tingkat = len(matriks) - 1
+    for i, (batas, _) in enumerate(matriks):
         if limit <= batas:
             tingkat = i
             break
-    # Rating di bawah BBB menaikkan kewenangan satu tingkat.
-    if grade in ("B", "CCC"):
-        tingkat = min(tingkat + 1, len(MATRIKS_KEWENANGAN) - 1)
-    return MATRIKS_KEWENANGAN[tingkat][1]
+    # Dua pita teratas menaikkan kewenangan satu tingkat.
+    if grade in (URUTAN_PITA[2], URUTAN_PITA[3]):
+        tingkat = min(tingkat + 1, len(matriks) - 1)
+    return matriks[tingkat][1]
 
 
 def _turunan_keuangan(pengajuan: dict, plafon: float, pricing: float = 0.105) -> dict:
@@ -291,19 +379,29 @@ def score_pd(pengajuan: dict) -> tuple[float, list[Kontribusi]]:
     return pd, komponen
 
 
-def grade_dari_pd(pd: float) -> str:
-    for batas, grade in BATAS_GRADE:
-        if pd <= batas:
-            return grade
-    return "CCC"
+def pita_dari_skor(skor: float) -> str:
+    """Pita risiko untuk satu skor model, memakai ambang berkas kebijakan PD."""
+    c = cutoff_pita()
+    if skor <= c["q50"]:
+        return URUTAN_PITA[0]
+    if skor <= c["q80"]:
+        return URUTAN_PITA[1]
+    if skor <= c["q95"]:
+        return URUTAN_PITA[2]
+    return URUTAN_PITA[3]
 
 
 def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
     """Rantai perhitungan keputusan sesuai proposal bagian 3.2.
 
-    PD x LGD x EAD -> expected loss -> pricing; lalu limit dibatasi oleh
-    kapasitas arus kas, pagu kewenangan rating, sisa ruang BMPK grup, dan
-    tingkat pertanggungan agunan.
+    Skor PD -> pita risiko -> pricing dari grid pita; lalu limit dibatasi oleh
+    kapasitas arus kas, pagu limit pita, sisa ruang BMPK grup, dan tingkat
+    pertanggungan agunan.
+
+    `expected_loss` tetap dihitung dan dilaporkan, tetapi sebagai angka
+    indikatif: PD di sini skor peringkat yang tidak terkalibrasi, jadi hasil
+    kalinya dengan LGD dan EAD tidak boleh dibaca sebagai rupiah kerugian yang
+    diharapkan. Ia tidak lagi masuk ke pricing.
     """
     pd, kontribusi = score_pd(pengajuan)
     plafon = float(pengajuan["plafon"])
@@ -315,11 +413,15 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
     ead = plafon
     el = pd * lgd * ead
 
-    pricing = BIAYA_DANA + BIAYA_OPERASIONAL + MARGIN_TARGET + (el / max(plafon, 1.0))
-    pricing = float(min(max(pricing, PRICING_MIN), PRICING_MAX))
+    grade = pita_dari_skor(pd)
+    cov = covenant_untuk(grade)
 
-    grade = grade_dari_pd(pd)
-    cov = COVENANT_PER_RATING[grade]
+    # Pricing datang dari grid per pita - median suku bunga yang benar-benar
+    # pernah ditagih pada pita itu - bukan dari tumpukan biaya dana + margin +
+    # expected loss. Premi expected loss per pengajuan sengaja TIDAK
+    # ditambahkan: skor PD artefak ini tidak terkalibrasi, jadi PD x LGD x EAD
+    # tidak punya satuan rupiah yang bisa dipertanggungjawabkan.
+    pricing = float(min(max(pricing_dasar(grade), PRICING_MIN), PRICING_MAX))
 
     t = _turunan_keuangan(pengajuan, plafon, pricing)
 
@@ -335,13 +437,21 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
             angsuran_maks * (1 - (1 + i) ** (-tenor)) / i if i > 0 else angsuran_maks * tenor
         )
 
-    # Batas 2 — pagu kewenangan menurut rating internal.
-    pagu = PAGU_GRADE[grade]
+    # Batas 2 — pagu limit menurut pita risiko.
+    pagu = pagu_untuk(grade)
 
-    # Batas 3 — sisa ruang BMPK grup.
-    group_share = float(pengajuan.get("group_exposure_share", 0.35))
-    eksposur_grup = BATAS_BMPK_GRUP * group_share
-    ruang_bmpk = max(BATAS_BMPK_GRUP - eksposur_grup, 0.0)
+    # Batas 3 — sisa ruang BMPK grup. Bila grup pemohon sudah teridentifikasi,
+    # eksposur dan batasnya datang dari `fact_eksposur_grup` lewat pengajuan;
+    # porsi asumsi hanya dipakai kalau tidak ada grup yang bisa ditunjuk.
+    batas_grup = batas_bmpk(pengajuan)
+    eksposur_nyata = pengajuan.get("eksposur_grup_rp")
+    if eksposur_nyata is not None:
+        eksposur_grup = float(eksposur_nyata)
+        group_share = eksposur_grup / batas_grup if batas_grup else 0.0
+    else:
+        group_share = float(pengajuan.get("group_exposure_share", 0.35))
+        eksposur_grup = batas_grup * group_share
+    ruang_bmpk = max(batas_grup - eksposur_grup, 0.0)
 
     # Batas 4 — tingkat pertanggungan agunan minimum per rating.
     nilai_agunan = float(pengajuan.get("nilai_agunan", 0.0))
@@ -368,7 +478,7 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
     catatan = []
     if limit < plafon:
         pembatas = min(
-            [(plafon_kapasitas, "kapasitas arus kas"), (pagu, f"pagu kewenangan rating {grade}"),
+            [(plafon_kapasitas, "kapasitas arus kas"), (pagu, f"pagu limit pita {grade.lower()}"),
              (ruang_bmpk, "sisa ruang BMPK grup"), (plafon_agunan, "pertanggungan agunan")],
             key=lambda x: x[0],
         )[1]
@@ -385,14 +495,15 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
         )
     if pd > 0.095:
         catatan.append(
-            f"Rating internal {grade} — keputusan naik satu tingkat kewenangan dan covenant "
-            "diuji dengan frekuensi lebih rapat."
+            f"Pengajuan berada pada pita {grade.lower()} — keputusan naik satu tingkat "
+            "kewenangan dan covenant diuji dengan frekuensi lebih rapat."
         )
     if lgd > 0.70:
         catatan.append("Pertanggungan agunan tipis; pertimbangkan tambahan agunan atau penjaminan korporasi.")
     if der > cov["der_maks"]:
         catatan.append(
-            f"DER {_x(der)} sudah di atas ambang covenant kelas {grade} ({_x(cov['der_maks'])})."
+            f"DER {_x(der)} sudah di atas ambang covenant pita {grade.lower()} "
+            f"({_x(cov['der_maks'])})."
         )
 
     return HasilSkor(
@@ -401,6 +512,9 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
         debt_to_ebitda=tt["debt_to_ebitda"], ebitda=t["ebitda"], coverage_agunan=coverage,
         angsuran=angsuran, komite_pemutus=komite_pemutus(limit, grade),
         eksposur_grup=eksposur_grup, ruang_bmpk=ruang_bmpk,
+        batas_bmpk=batas_grup,
+        sumber_bmpk=("fact_eksposur_grup" if eksposur_nyata is not None
+                     else "asumsi porsi segmen"),
         kontribusi=kontribusi, catatan=catatan, covenant=cov,
     )
 
@@ -423,7 +537,16 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
 
     Rekomendasi yang gagal pada gerbang ini tidak pernah ditampilkan sebagai
     usulan setuju; sistem menampilkannya sebagai *perlu penyesuaian* beserta
-    pasal yang menjadi dasar.
+    dasar aturannya.
+
+    Tiap butir membawa `aturan`, yaitu kalimat kebijakan internal yang benar-benar
+    dipakai kode di bawah — ambang segmen, matriks kewenangan, batas BMPK,
+    pertanggungan agunan, dan covenant per rating. Yang TIDAK ada di sini adalah
+    nomor pasalnya: butir keluar dari fungsi ini dengan `pasal = None`, dan
+    `lib/kebijakan.lampirkan_rujukan()` yang mengisinya dari korpus terindeks
+    bila memang ada padanannya. Sebelumnya tiap butir membawa nomor karangan
+    seperti "KKK-08.2" — terbaca seperti pasal yang bisa dibuka, padahal tidak
+    ada berkasnya.
     """
     plafon = float(pengajuan["plafon"])
     penjualan = float(pengajuan["penjualan_tahunan"])
@@ -440,9 +563,8 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "aspek": "Batas segmen",
         "status": LOLOS if dalam_segmen else PENYESUAIAN,
         "temuan": f"Penjualan Rp {penjualan / 1e9:.0f} M, plafon Rp {plafon / 1e9:.0f} M",
-        "pasal": "KKK-02.1 Definisi Segmen Komersial",
-        "kutipan": "Segmen komersial mencakup debitur dengan penjualan tahunan Rp 30 miliar "
-                   "sampai Rp 300 miliar dan plafon Rp 10 miliar sampai Rp 150 miliar.",
+        "aturan": "Segmen komersial mencakup debitur dengan penjualan tahunan Rp 30 miliar "
+                  "sampai Rp 300 miliar dan plafon Rp 10 miliar sampai Rp 150 miliar.",
         "tindakan": "Sesuai lingkup segmen." if dalam_segmen
                     else "Alihkan pengajuan ke segmen UMKM atau korporasi.",
     })
@@ -451,11 +573,10 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
     aspek.append({
         "aspek": "Kewenangan",
         "status": LOLOS if hasil.limit_usulan > 0 else PENYESUAIAN,
-        "temuan": f"Limit Rp {hasil.limit_usulan / 1e9:.0f} M, rating {hasil.grade} "
+        "temuan": f"Limit Rp {hasil.limit_usulan / 1e9:.0f} M, pita {hasil.grade.lower()} "
                   f"-> {hasil.komite_pemutus}",
-        "pasal": "KKK-05.3 Matriks Kewenangan Komite Komersial",
-        "kutipan": "Fasilitas di atas Rp 75 miliar atau berating di bawah BBB diputus oleh "
-                   "Komite Kredit Komersial Pusat.",
+        "aturan": "Fasilitas di atas Rp 75 miliar atau berating di bawah BBB diputus oleh "
+                  "Komite Kredit Komersial Pusat.",
         "tindakan": "Ajukan ke tingkat komite di atas." if hasil.limit_usulan <= 0
                     else "Diputus pada tingkat komite tersebut.",
     })
@@ -468,9 +589,8 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "status": status_bmpk,
         "temuan": f"Eksposur grup {porsi * 100:.0f}% batas · sisa ruang "
                   f"Rp {hasil.ruang_bmpk / 1e9:.0f} M",
-        "pasal": "KKK-08.2 Batas Maksimum Pemberian Kredit Grup Debitur",
-        "kutipan": "Eksposur gabungan satu grup debitur tidak melampaui batas maksimum "
-                   "pemberian kredit; sisa ruang dicatat pada setiap usulan.",
+        "aturan": "Eksposur gabungan satu grup debitur tidak melampaui batas maksimum "
+                  "pemberian kredit; sisa ruang dicatat pada setiap usulan.",
         "tindakan": "Lolos, sisa ruang dicatat." if status_bmpk == LOLOS
                     else "Turunkan limit atau lunasi fasilitas grup lain lebih dulu.",
     })
@@ -485,9 +605,8 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "status": status_agunan,
         "temuan": f"Coverage {hasil.coverage_agunan * 100:.0f}% vs minimum "
                   f"{coverage_min * 100:.0f}%",
-        "pasal": "KKK-09.4 Kebijakan Agunan dan Pengikatan",
-        "kutipan": "Rasio pertanggungan agunan minimum ditetapkan per kelas rating; "
-                   "penjaminan silang tidak boleh dihitung ganda.",
+        "aturan": "Rasio pertanggungan agunan minimum ditetapkan per pita risiko; "
+                  "penjaminan silang tidak boleh dihitung ganda.",
         "tindakan": "Pertanggungan memadai." if status_agunan == LOLOS
                     else f"Tambah agunan atau turunkan limit ke Rp {limit_patuh / 1e9:.0f} M "
                          f"agar coverage {coverage_min * 100:.0f}%.",
@@ -507,10 +626,9 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "temuan": "; ".join(pelanggaran) if pelanggaran
                   else f"DER maks {_x(cov['der_maks'])} · ICR min {_x(cov['icr_min'])} · "
                        f"DSCR min {_x(cov['dscr_min'])}",
-        "pasal": "KKK-11.1 Daftar Covenant Standar per Kelas Rating",
-        "kutipan": f"Kelas rating {hasil.grade} wajib memuat covenant DER maksimum "
-                   f"{_x(cov['der_maks'])} dan ICR minimum {_x(cov['icr_min'])}, "
-                   f"diuji {cov['uji'].lower()}.",
+        "aturan": f"Pita {hasil.grade.lower()} wajib memuat covenant DER maksimum "
+                  f"{_x(cov['der_maks'])} dan ICR minimum {_x(cov['icr_min'])}, "
+                  f"diuji {cov['uji'].lower()}.",
         "tindakan": f"Cantumkan sebagai covenant wajib, uji {cov['uji'].lower()}."
                     if not pelanggaran
                     else "Rasio berjalan sudah melanggar ambang — perlu penyesuaian struktur fasilitas.",
@@ -525,13 +643,18 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "status": status_afiliasi,
         "temuan": f"{afiliasi} entitas satu grup"
                   + (", terdapat rangkap jabatan pengurus" if rangkap else ""),
-        "pasal": "KKK-13.6 Kebijakan Pihak Terafiliasi dan APU-PPT",
-        "kutipan": "Penelusuran pemilik manfaat wajib dilakukan bila ditemukan atribut "
-                   "identitas atau pengurus yang dipakai bersama antar badan hukum.",
+        "aturan": "Penelusuran pemilik manfaat wajib dilakukan bila ditemukan atribut "
+                  "identitas atau pengurus yang dipakai bersama antar badan hukum.",
         "tindakan": "Tidak ada pemicu penelaahan." if status_afiliasi == LOLOS
                     else "Penelaahan lanjutan wajib: telusuri pemilik manfaat akhir.",
     })
 
+    # Kunci rujukan sengaja ada dan kosong: tampilan dan memo membedakan
+    # "belum ditelusuri" dari "tidak ada padanan", dan keduanya bukan "patuh".
+    for a in aspek:
+        a.setdefault("pasal", None)
+        a.setdefault("kutipan", None)
+        a.setdefault("sumber", "internal")
     return aspek
 
 
@@ -544,12 +667,18 @@ def status_kepatuhan(gerbang: list[dict]) -> str:
 
 
 def keputusan_dari_hasil(hasil: HasilSkor, gerbang: list[dict] | None = None) -> str:
-    """Usulan keputusan setelah melewati gerbang kepatuhan."""
-    if hasil.limit_usulan <= 0 or hasil.pd > 0.185:
+    """Usulan keputusan setelah melewati gerbang kepatuhan.
+
+    Ambangnya pita, bukan angka PD. Skor model ini tidak terkalibrasi, jadi
+    "PD di atas 18,5%" tidak berarti apa-apa sebagai probabilitas - sementara
+    "berada pada pita teratas portofolio" berarti sesuatu yang bisa diperiksa.
+    """
+    if hasil.limit_usulan <= 0 or hasil.grade == URUTAN_PITA[3]:
         return "TOLAK"
     if gerbang is not None and status_kepatuhan(gerbang) == PENYESUAIAN:
         return "PERLU PENYESUAIAN"
-    if hasil.pd > 0.095 or hasil.dscr < hasil.covenant.get("dscr_min", DSCR_MIN_KEBIJAKAN):
+    if hasil.grade == URUTAN_PITA[2] or hasil.dscr < hasil.covenant.get(
+            "dscr_min", DSCR_MIN_KEBIJAKAN):
         return "SETUJU DENGAN SYARAT"
     if gerbang is not None and status_kepatuhan(gerbang) == TELAAH:
         return "SETUJU DENGAN SYARAT"

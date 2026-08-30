@@ -7,20 +7,17 @@ data/
 .env
 *.key
 
-# model dan eksperimen
-mlruns/
-*.pkl
-*.joblib
-
 # python
 __pycache__/
 .venv/
 *.egg-info/
 .ipynb_checkpoints/
+.pytest_cache/
 
-# DAG airflow
+# prefect
+.prefect/
+prefect.db
 logs/
-airflow.db
 
 # dbt
 target/

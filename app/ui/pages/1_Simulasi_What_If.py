@@ -16,7 +16,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import dummy_data, mock_engine, model_nyata as mn
+from lib import dummy_data, kebijakan as kb, mock_engine, model_nyata as mn
+from lib import parameter_kebijakan as pk
 from lib import pipeline_copilot as pc
 from lib.format import kali, miliar, persen
 from lib.tampilan import (
@@ -51,6 +52,10 @@ hero(
      ("keluaran", "limit · pricing · covenant")],
 )
 
+# Parameter kebijakan yang sama dengan halaman copilot: recovery agunan,
+# ambang covenant, dan matriks kewenangan diturunkan dari lapisan emas.
+pk.terapkan()
+
 dasar = st.session_state.get("copilot_fitur")
 if dasar is None:
     st.info(
@@ -64,7 +69,10 @@ if dasar is None:
         utang_berbunga_eksisting=dasar["plafon"] * 0.25, konversi_ebitda_kas=0.76,
         utilisasi_plafon=0.72, buyer_concentration_hhi=0.32,
         supplier_concentration_hhi=0.30, neighbor_default_rate_1hop=0.035,
-        group_exposure_share=0.42, network_risk_score=18.0, tenure_nasabah_thn=8.0,
+        # `network_risk_score` sengaja tidak ada di sini: kasus contoh tidak
+        # punya afiliasi yang tercocok ke graf, dan angka contoh untuk skor
+        # jaringan akan tampil persis seperti skor hasil pencocokan sungguhan.
+        group_exposure_share=0.42, tenure_nasabah_thn=8.0,
     )
 
 MIN_PLAFON = int(mock_engine.SEGMEN["plafon_min"] / 1e9)
@@ -136,7 +144,20 @@ with st.expander("Parameter lanjutan (kinerja, perilaku fasilitas, dan fitur gra
                              float(dasar["supplier_concentration_hhi"]), step=0.01)
     tetangga = d2.slider("Gagal bayar entitas 1-hop", 0.0, 0.60,
                          float(dasar["neighbor_default_rate_1hop"]), step=0.01)
-    network = d3.slider("Skor risiko jaringan", 0, 100, int(dasar["network_risk_score"]))
+    # Skor jaringan tidak punya nilai bawaan. `lengkapi_fitur_graf()` sengaja
+    # tidak mengisinya ketika pencocokan afiliasi tidak bisa dijalankan, dan
+    # slider yang tetap muncul pada angka apa pun akan mengubah "tidak diukur"
+    # menjadi sebuah pengukuran - termasuk 0, yang terbaca sebagai bebas risiko.
+    network = dasar.get("network_risk_score")
+    if network is None:
+        d3.markdown("**Skor risiko jaringan**")
+        d3.caption(
+            "Tidak tersedia — pencocokan afiliasi tidak dijalankan pada kasus ini, "
+            "jadi tidak ada angka yang boleh digeser. Model PD memakai jalur "
+            "tanpa fitur ini."
+        )
+    else:
+        network = d3.slider("Skor risiko jaringan", 0, 100, int(network))
     tenure = d3.slider("Lama menjadi nasabah (tahun)", 0.0, 25.0,
                        float(dasar["tenure_nasabah_thn"]), step=0.5)
     saldo_giro = d3.slider("Saldo giro rata-rata (Rp miliar)", 0, 50,
@@ -158,15 +179,24 @@ skenario = dict(
     supplier_concentration_hhi=float(supplier_hhi),
     neighbor_default_rate_1hop=float(tetangga),
     group_exposure_share=float(group_share),
-    network_risk_score=float(network), tenure_nasabah_thn=float(tenure),
+    tenure_nasabah_thn=float(tenure),
     jumlah_entitas_grup=int(dasar.get("jumlah_entitas_grup", 1)),
     indikasi_rangkap_jabatan=bool(dasar.get("indikasi_rangkap_jabatan", False)),
 )
+# Batas BMPK grup ikut terbawa dari kasus copilot bila grupnya teridentifikasi,
+# supaya sisa ruang pada simulasi diukur terhadap batas grup yang sama.
+if dasar.get("batas_bmpk_rp"):
+    skenario["batas_bmpk_rp"] = float(dasar["batas_bmpk_rp"])
+
+# Kunci skor jaringan hanya ada kalau angkanya memang ada. Absennya dibaca
+# `mock_engine.score_pd()` maupun model sebagai fitur yang tidak terukur.
+if network is not None:
+    skenario["network_risk_score"] = float(network)
 
 pakai_model = st.toggle(
     "Pakai model PD dan LGD sungguhan", value=mn.status_lapisan_model()["pd"],
     disabled=not mn.status_lapisan_model()["pd"],
-    help="Menyalakan artefak ml/models. Bila dimatikan, simulasi memakai mesin demo "
+    help="Menyalakan artefak ml/artifacts. Bila dimatikan, simulasi memakai mesin demo "
          "deterministik supaya perilaku tiap rasio terlihat terpisah.",
 )
 
@@ -183,7 +213,7 @@ def dengan_model(skenario_uji: dict) -> dict:
     lgd_model = mn.skor_lgd(skenario_uji)
     salinan = dict(skenario_uji)
     if hasil_model is not None:
-        salinan["pd_model"] = hasil_model.pd_kalibrasi
+        salinan["pd_model"] = hasil_model.skor
     if lgd_model is not None:
         salinan["lgd_model"] = lgd_model
     return salinan
@@ -191,7 +221,7 @@ def dengan_model(skenario_uji: dict) -> dict:
 
 skenario = dengan_model(skenario)
 hasil = mock_engine.recommend_limit_pricing(skenario)
-gerbang = mock_engine.check_credit_policy(hasil, skenario)
+gerbang = kb.lampirkan_rujukan(mock_engine.check_credit_policy(hasil, skenario))
 awal = mock_engine.recommend_limit_pricing(dengan_model(dict(dasar)))
 keputusan = mock_engine.keputusan_dari_hasil(hasil, gerbang)
 
@@ -201,7 +231,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 kartu_hasil(hasil, plafon)
-st.markdown("**Rasio keuangan terhadap ambang covenant kelas rating**")
+st.markdown("**Rasio keuangan terhadap ambang covenant pita risiko**")
 kartu_rasio(hasil)
 
 b1, b2, b3, b4 = st.columns(4)
@@ -225,12 +255,23 @@ with kol_gerbang:
     panel_gerbang(gerbang, ringkas=True)
 with kol_bmpk:
     judul_bagian("Posisi BMPK grup")
-    st.plotly_chart(plot_bmpk(hasil.eksposur_grup, hasil.limit_usulan), use_container_width=True)
+    st.plotly_chart(
+        plot_bmpk(hasil.eksposur_grup, hasil.limit_usulan, batas=hasil.batas_bmpk),
+        use_container_width=True,
+    )
     st.caption(
         f"Eksposur grup berjalan {miliar(hasil.eksposur_grup, 0)} · usulan fasilitas ini "
         f"{miliar(hasil.limit_usulan, 0)} · sisa ruang {miliar(hasil.ruang_bmpk, 0)}."
     )
-    st.markdown("**Covenant wajib kelas rating " + hasil.grade + "**")
+    # Batas BMPK pada simulasi bisa datang dari grup yang sudah teridentifikasi
+    # di halaman copilot, bisa juga dari angka cadangan. Bedanya empat kali
+    # lipat, jadi ia disebutkan alih-alih dibiarkan terbaca sebagai batas resmi.
+    st.caption(
+        f"Batas yang dipakai {miliar(hasil.batas_bmpk, 0)} — sumber: **{hasil.sumber_bmpk}**."
+        + ("" if hasil.sumber_bmpk == "fact_eksposur_grup" else
+           " Jalankan copilot atas berkas pengajuan untuk memakai batas grup yang sebenarnya.")
+    )
+    st.markdown("**Covenant wajib pita " + hasil.grade.lower() + "**")
     st.dataframe(
         pd.DataFrame([
             {"Covenant": "Debt to equity maksimum", "Ambang": kali(hasil.covenant["der_maks"]),

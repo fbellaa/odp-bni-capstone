@@ -1,9 +1,9 @@
 """Pencarian kebijakan dengan sitasi per pasal.
 
-Bentuk keluaran `kutipan()` sengaja dibuat sama dengan
-`app/ui/lib/dummy_data.kutipan_kebijakan()` - kunci `pasal`, `isi`, `skor`,
-`versi`. Halaman Streamlit yang sudah ada bisa beralih dari kutipan tiruan ke
-hasil RAG asli tanpa mengubah kode tampilan.
+Keluaran `kutipan()` berkunci `pasal`, `isi`, `skor`, `versi`, `halaman`.
+Bentuk itu dipakai langsung oleh `app/ui/lib/kebijakan.py` untuk mengisi
+rujukan pada gerbang kepatuhan dan bagian rujukan draft credit memo -
+menggantikan kutipan tiruan yang dulu ditulis tangan di lapisan antarmuka.
 """
 
 from __future__ import annotations
@@ -17,7 +17,12 @@ import numpy as np
 
 from copilot.konfigurasi import PENGATURAN
 from copilot.llm.klien import KlienOllama, klien
-from copilot.rag.indeks import IndexKebijakan, index_tersedia, muat_index
+from copilot.rag.indeks import (
+    IndexKebijakan,
+    index_tersedia,
+    muat_index,
+    pasal_dalam_kueri,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -39,16 +44,29 @@ def _index() -> IndexKebijakan:
 
 
 def cari(
-    kueri: str, *, top_k: int | None = None, kl: KlienOllama | None = None
+    kueri: str,
+    *,
+    top_k: int | None = None,
+    kl: KlienOllama | None = None,
+    bobot_leksikal: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Potongan kebijakan paling relevan, terurut menurun."""
+    """Potongan kebijakan paling relevan, terurut menurun.
+
+    Kueri ikut dikirim apa adanya ke index karena peringkatnya hibrida: selain
+    kosinus, ada kecocokan istilah dan jalur khusus untuk kueri yang menyebut
+    nomor pasal. Rinciannya di `IndexKebijakan.cari`.
+    """
     kl = kl or klien()
     top_k = top_k or PENGATURAN.top_k
+    if bobot_leksikal is None:
+        bobot_leksikal = PENGATURAN.bobot_leksikal
     vektor = np.asarray(kl.embed([kueri])[0], dtype=np.float32)
     norma = np.linalg.norm(vektor)
     if norma:
         vektor = vektor / norma
-    hasil = _index().cari(vektor, top_k)
+    hasil = _index().cari(
+        vektor, top_k, kueri=kueri, bobot_leksikal=bobot_leksikal
+    )
     for h in hasil:
         h["halaman"] = json.loads(h.get("halaman") or "[]")
     return hasil
@@ -94,12 +112,27 @@ def jawab(
     konteks = "\n\n---\n\n".join(
         f"[{p['rujukan']}]\n{p['teks']}" for p in potongan
     )
+
+    # Kueri boleh menyebut pasal yang tidak ada di korpus - POJK 40/2019 bukan
+    # satu-satunya peraturan yang dipakai analis. Ketidakhadirannya disebut
+    # terang-terangan supaya model tidak menambalnya dengan pasal termirip.
+    ada = {str(p.get("pasal")).upper() for p in potongan}
+    hilang = [n for n in pasal_dalam_kueri(pertanyaan) if n not in ada]
+    catatan = (
+        f"\n\nCatatan: Pasal {', '.join(hilang)} tidak ada pada korpus. "
+        "Katakan itu apa adanya dan jangan menggantinya dengan pasal lain."
+        if hilang
+        else ""
+    )
+
     balasan = kl.chat(
         [
             {"role": "system", "content": PERINTAH_JAWAB},
             {
                 "role": "user",
-                "content": f"Kutipan peraturan:\n\n{konteks}\n\nPertanyaan: {pertanyaan}",
+                "content": (
+                    f"Kutipan peraturan:\n\n{konteks}\n\nPertanyaan: {pertanyaan}{catatan}"
+                ),
             },
         ],
         peran="chat",

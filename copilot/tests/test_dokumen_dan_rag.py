@@ -281,3 +281,106 @@ def test_paragraf_temuan_juga_menyebut_cakupan():
     )
     assert "1.543" in paragraf
     assert "KKK-13.6" in paragraf
+
+
+# ------------------------------------------------------------ peringkat hibrida
+def _index_palsu():
+    """Index kecil dengan vektor yang SENGAJA menyesatkan.
+
+    Potongan Pasal 12 dibuat sedikit kurang mirip menurut kosinus (0,55 lawan
+    0,62), jadi apa pun yang mengangkatnya ke atas datang dari jalur pasal
+    eksplisit atau dari skor leksikal - bukan dari vektor. Selisihnya dibuat
+    tipis dengan sengaja: itulah sebaran kosinus yang sebenarnya keluar dari
+    nomic-embed-text pada korpus satu peraturan, dan bobot leksikal 0,35
+    dipilih untuk sebaran seperti itu.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from copilot.rag.indeks import IndexKebijakan
+
+    potongan = pd.DataFrame(
+        [
+            {
+                "id": "p#0", "pasal": "5", "bab": "II", "berkas": "pojk.pdf",
+                "rujukan": "pojk.pdf · Pasal 5", "halaman": "[1]",
+                "teks": "Bank wajib menilai kualitas aset produktif secara berkala.",
+            },
+            {
+                "id": "p#1", "pasal": "12", "bab": "III", "berkas": "pojk.pdf",
+                "rujukan": "pojk.pdf · Pasal 12", "halaman": "[3]",
+                "teks": "Hapus buku dilakukan terhadap kredit yang telah macet.",
+            },
+            {
+                "id": "p#2", "pasal": "12", "bab": "III", "berkas": "pojk.pdf",
+                "rujukan": "pojk.pdf · Pasal 12", "halaman": "[4]",
+                "teks": "Hapus tagih hanya dapat dilakukan setelah hapus buku.",
+            },
+        ]
+    )
+    def _arah(kosinus: float) -> list[float]:
+        return [kosinus, float(np.sqrt(1.0 - kosinus**2))]
+
+    vektor = np.array(
+        [_arah(0.62), _arah(0.55), _arah(0.55)], dtype=np.float32
+    )
+    return IndexKebijakan(vektor, potongan, "uji"), np.array([1.0, 0.0], dtype=np.float32)
+
+
+@pytest.mark.parametrize(
+    "kueri, harapan",
+    [
+        ("apa isi Pasal 12?", ["12"]),
+        ("POJK 40/2019 pasal 5 ayat (2) dan Pasal 12A", ["5", "12A"]),
+        ("Pasal 7, pasal 7 lagi", ["7"]),
+        ("bagaimana aturan hapus buku?", []),
+    ],
+)
+def test_pasal_dalam_kueri(kueri, harapan):
+    from copilot.rag.indeks import pasal_dalam_kueri
+
+    assert pasal_dalam_kueri(kueri) == harapan
+
+
+def test_kueri_bernomor_pasal_mengangkat_pasal_itu_meski_vektornya_terjauh():
+    """Nomor pasal adalah kunci pencarian tepat, bukan soal kemiripan makna."""
+    index, vektor_kueri = _index_palsu()
+
+    dense = index.cari(vektor_kueri, top_k=2)
+    assert [h["id"] for h in dense] == ["p#0", "p#1"]  # kosinus menang di sini
+
+    hasil = index.cari(vektor_kueri, top_k=2, kueri="apa isi Pasal 12?")
+    assert [h["id"] for h in hasil[:2]] == ["p#1", "p#2"]
+    assert all(h["rujukan_eksplisit"] for h in hasil[:2])
+
+
+def test_pasal_eksplisit_dibawa_utuh_meski_melewati_top_k():
+    """Mengutip separuh pasal tanpa memberi tahu lebih buruk daripada top_k lewat."""
+    index, vektor_kueri = _index_palsu()
+    hasil = index.cari(vektor_kueri, top_k=1, kueri="Pasal 12")
+    assert [h["id"] for h in hasil] == ["p#1", "p#2"]
+
+
+def test_nomor_pasal_di_luar_korpus_kembali_ke_peringkat_biasa():
+    index, vektor_kueri = _index_palsu()
+    hasil = index.cari(vektor_kueri, top_k=2, kueri="Pasal 99")
+    assert [h["id"] for h in hasil] == ["p#0", "p#1"]
+    assert not any(h["rujukan_eksplisit"] for h in hasil)
+
+
+def test_skor_leksikal_mengangkat_istilah_persis_peraturan():
+    """Tanpa bobot leksikal, 'hapus buku' kalah oleh vektor yang lebih mirip."""
+    index, vektor_kueri = _index_palsu()
+
+    dense = index.cari(vektor_kueri, top_k=1)
+    assert dense[0]["id"] == "p#0"
+
+    hibrida = index.cari(vektor_kueri, top_k=1, kueri="hapus buku", bobot_leksikal=0.35)
+    assert hibrida[0]["id"] == "p#1"
+
+
+def test_stopword_tidak_menentukan_peringkat():
+    """Kueri yang hanya berisi kata sambung tidak boleh mengacak urutan."""
+    index, vektor_kueri = _index_palsu()
+    skor = index.skor_leksikal("yang dan dengan pada dalam")
+    assert skor.max() == 0.0

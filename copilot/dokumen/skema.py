@@ -19,7 +19,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-JenisDokumen = Literal["rekening_koran", "laporan_keuangan", "akta", "tidak_dikenali"]
+JenisDokumen = Literal[
+    "rekening_koran", "laporan_keuangan", "akta", "pengajuan", "tidak_dikenali"
+]
 
 
 class Sumber(BaseModel):
@@ -126,6 +128,60 @@ class Akta(BaseModel):
     pemegang_saham: list[PemegangSaham] = Field(default_factory=list)
 
 
+# ----------------------------------------------------------- form pengajuan
+class ItemAgunan(BaseModel):
+    jenis: str
+    nilai_taksasi: float | None = None
+    nilai_likuidasi: float | None = None
+
+
+class FormPengajuan(BaseModel):
+    """Nota analisa pengajuan kredit - dokumen internal bank, bukan berkas nasabah.
+
+    Dua blok terakhir sengaja dipisah dari sisanya. Blok A sampai C diisi
+    relationship manager sebagai pengusul; `rating_internal` dan `skor_kredit`
+    adalah keluaran sistem rating dan mesin scoring bank, dan pemisahan tugas
+    itulah yang membuat rating tidak boleh ditetapkan oleh pihak yang mengajukan.
+    """
+
+    nomor_pengajuan: str | None = None
+    tanggal_pengajuan: date | None = None
+    unit_kerja: str | None = None
+    nama_rm: str | None = None
+
+    nama_debitur: str | None = None
+    cif: str | None = None
+    npwp: str | None = None
+    alamat_usaha: str | None = None
+    sektor: str | None = None
+    tahun_berdiri: int | None = None
+    jumlah_karyawan: int | None = None
+
+    jenis_fasilitas: str | None = None
+    plafon_diminta: float | None = None
+    tenor_bulan: int | None = None
+    tujuan_penggunaan: str | None = None
+
+    agunan: list[ItemAgunan] = Field(default_factory=list)
+    ada_jaminan_silang: bool = False
+
+    jumlah_entitas_grup: int | None = None
+    indikasi_konsentrasi_pembeli: bool = False
+    indikasi_konsentrasi_pemasok: bool = False
+
+    rating_internal: str | None = None
+    skor_kredit: float | None = None
+    dokumen_lengkap: bool = True
+
+    @property
+    def total_taksasi(self) -> float:
+        return sum(a.nilai_taksasi or 0.0 for a in self.agunan)
+
+    @property
+    def total_likuidasi(self) -> float:
+        return sum(a.nilai_likuidasi or 0.0 for a in self.agunan)
+
+
 # ----------------------------------------------------------------- gabungan
 class DokumenTerstruktur(BaseModel):
     jenis: JenisDokumen
@@ -133,6 +189,7 @@ class DokumenTerstruktur(BaseModel):
     rekening_koran: RekeningKoran | None = None
     laporan_keuangan: LaporanKeuangan | None = None
     akta: Akta | None = None
+    pengajuan: FormPengajuan | None = None
     catatan: list[str] = Field(default_factory=list)
 
 
@@ -160,6 +217,11 @@ class BerkasPengajuan(BaseModel):
     @property
     def akta_utama(self) -> Akta | None:
         daftar = [d.akta for d in self.dokumen if d.akta]
+        return daftar[-1] if daftar else None
+
+    @property
+    def pengajuan_utama(self) -> FormPengajuan | None:
+        daftar = [d.pengajuan for d in self.dokumen if d.pengajuan]
         return daftar[-1] if daftar else None
 
     # --------------------------------------------- kontrak resolusi afiliasi
