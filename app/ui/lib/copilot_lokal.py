@@ -49,7 +49,7 @@ __all__ = [
     "TERSEDIA",
     "baca_dokumen",
     "cari_kebijakan",
-    "jawab_kebijakan",
+    "index_kebijakan_tersedia",
     "memo_copilot",
     "ringkas_katalog",
     "simpan_unggahan",
@@ -108,5 +108,11 @@ def cari_kebijakan(kueri: str, top_k: int = 5) -> list[dict]:
     return rag_cari.kutipan(kueri, top_k=top_k)
 
 
-def jawab_kebijakan(pertanyaan: str) -> dict:
-    return rag_cari.jawab(pertanyaan)
+def index_kebijakan_tersedia() -> bool:
+    """Kesiapan index saja, tanpa menyentuh Ollama.
+
+    `status_lingkungan()` ikut memanggil Ollama, jadi ia terlalu mahal untuk
+    dipakai penyusun memo yang hanya perlu tahu apakah korpus layak ditelusuri.
+    """
+    return bool(TERSEDIA) and rag_indeks.index_tersedia()
+

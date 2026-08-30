@@ -1,0 +1,75 @@
+# Konfigurasi deployment Prefect 3 untuk pipeline data Banking Copilot.
+#
+#   prefect server start                      # jalankan server lokal (UI :4200)
+#   prefect deploy --all                      # daftarkan semua deployment
+#   prefect worker start --pool default-agent-pool
+#   prefect deployment run 'banking-copilot-data-pipeline/harian'
+
+name: banking-copilot
+prefect-version: 3.8.3
+
+build: null
+push: null
+
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ $PREFECT_PROJECT_DIR }}"
+
+definitions:
+  work_pool: &work_pool
+    name: default-agent-pool
+    work_queue_name: default
+
+deployments:
+  # TIDAK dijadwalkan. Sumbernya sepuluh CSV statis dan generatornya berseed
+  # tunggal, jadi menjalankannya tiap hari menghasilkan byte yang persis sama.
+  # Picu manual setelah aturan sintesis, ambang covenant, atau parameter di
+  # config.py diubah - itulah satu-satunya yang bisa mengubah keluarannya.
+  - name: bangun-penuh
+    entrypoint: pipelines/flows/main_flow.py:main_flow
+    description: >
+      Pipeline penuh bronze -> silver -> gold -> gerbang kualitas.
+      Bronze dilewati bila parquet-nya sudah ada (paksa_ulang_bronze=false).
+      Jalankan manual saat kode atau parameter berubah.
+    parameters:
+      jalankan_bronze: true
+      jalankan_silver: true
+      jalankan_gold: true
+      paksa_ulang_bronze: false
+      strict: true
+    work_pool: *work_pool
+    tags: [data-pipeline, gold]
+
+  - name: refresh-gold
+    entrypoint: pipelines/flows/gold_flow.py:gold_flow
+    description: >
+      Bangun ulang layer gold saja - dipakai saat aturan sintesis atau ambang
+      covenant diubah, tanpa membaca ulang CSV 650 MB.
+    work_pool: *work_pool
+    tags: [gold]
+
+  # Jadwal mingguan, bukan tiap jam. Data tidak berubah sendiri; yang bisa
+  # berubah adalah LINGKUNGANNYA - upgrade pandas/numpy/networkx yang menggeser
+  # perilaku, berkas parquet yang rusak, atau disk yang bermasalah. Itu peristiwa
+  # mingguan, bukan per jam. Gerbang ini juga sudah jalan otomatis di akhir
+  # `bangun-penuh`, dan di CI setiap commit - dua tempat yang jauh lebih tepat.
+  - name: gerbang-kualitas
+    entrypoint: pipelines/flows/quality_flow.py:quality_flow
+    description: >
+      Uji kualitas termasuk uji anti-bocor lapisan graf. Jadwal mingguan berperan
+      sebagai kenari lingkungan, bukan pemantau data.
+    parameters:
+      strict: true
+    schedules:
+      - cron: "0 7 * * 1"
+        timezone: Asia/Jakarta
+    work_pool: *work_pool
+    tags: [quality]
+
+  - name: bronze-refresh
+    entrypoint: pipelines/flows/bronze_flow.py:bronze_flow
+    description: Baca ulang seluruh CSV mentah (paksa_ulang=true).
+    parameters:
+      paksa_ulang: true
+    work_pool: *work_pool
+    tags: [bronze]

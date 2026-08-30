@@ -53,6 +53,40 @@ def _tandai_split(tanggal: pd.Series) -> pd.Series:
     return np.where(tanggal <= BATAS_SPLIT_OOT, "latih", "uji_oot")
 
 
+def saring_segmen_komersial(df: pd.DataFrame, nama: str) -> pd.DataFrame:
+    """Buang baris dengan neraca di luar kewajaran segmen komersial.
+
+    Penskalaan rupiah menjangkar pada PENJUALAN (§3.5), sedangkan pos neraca
+    ikut dikalikan faktor yang sama. Perusahaan padat aset di panel US karena
+    itu muncul sebagai debitur beromzet puluhan miliar dengan total aset ratusan
+    triliun - rasio aset/penjualan sampai 73.000x. Baris seperti itu bukan
+    debitur komersial dan merusak seluruh blok `fin_`.
+
+    Ambangnya dipasang DI SINI, bukan di `joins.pilih_panel_debitur`, dan itu
+    keputusan sadar: memasangnya di pemilihan panel menciutkan kolam perusahaan
+    layak dari 6.251 ke 5.810, sehingga populasi turun dari 6.000 ke 5.810 dan
+    SELURUH tabel gold berubah - termasuk yang sudah dipakai melatih model EWS
+    dan LGD. Di lapisan ABT, ambang ini hanya menyentuh tabel yang dipakai
+    melatih PD.
+
+    Konsekuensi yang harus ikut dilaporkan: `dim_debitur`, `fact_pengajuan`, dan
+    `feat_graf_pit` tetap memuat debitur ini, jadi angka portofolio di lapisan
+    BI TIDAK sama dengan populasi model PD. `abt_ews` dan `abt_lgd` juga belum
+    disaring - lihat catatan pada `build_abt`.
+    """
+    rasio = df["fin_total_aset_rp"] / df["fin_penjualan_rp"]
+    simpan = rasio <= settings.aset_thd_penjualan_maks
+    dibuang = int((~simpan).sum())
+    if dibuang:
+        LOG.info(
+            "%s: %s baris dibuang oleh ambang aset/penjualan <= %s",
+            nama,
+            dibuang,
+            settings.aset_thd_penjualan_maks,
+        )
+    return df[simpan].copy()
+
+
 def _blok(df: pd.DataFrame, prefiks: str, kecuali: set[str]) -> pd.DataFrame:
     """Beri prefiks blok pada semua kolom kecuali kunci."""
     return df.rename(
@@ -220,6 +254,7 @@ def build_abt_pd() -> pd.DataFrame:
     ]
     fitur = [c for c in abt.columns if c.startswith(("fin_", "app_", "graf_"))]
     abt = abt[kunci + sorted(fitur) + target]
+    abt = saring_segmen_komersial(abt, "abt_pd")
 
     _pastikan_bersih(abt, "abt_pd")
     return abt.sort_values("tanggal_pengajuan").reset_index(drop=True)
@@ -304,6 +339,7 @@ def build_abt_pengajuan_ditolak(abt_pd: pd.DataFrame) -> pd.DataFrame:
     kolom_akhir = [
         c for c in abt_pd.columns if not c.startswith("y_") and c not in tanpa
     ]
+    ditolak = saring_segmen_komersial(ditolak, "abt_pengajuan_ditolak")
     return ditolak[kolom_akhir].reset_index(drop=True)
 
 
@@ -681,7 +717,18 @@ def _kamus(abt: pd.DataFrame, nama_abt: str) -> pd.DataFrame:
 
 
 def build_abt() -> dict[str, int]:
-    """Bangun ketiga ABT, kamus data, dan salinan CSV untuk serah terima."""
+    """Bangun ketiga ABT, kamus data, dan salinan CSV untuk serah terima.
+
+    Populasinya SENGAJA belum seragam. `abt_pd` dan `abt_pengajuan_ditolak`
+    disaring `saring_segmen_komersial`, sedangkan `abt_ews` dan `abt_lgd` belum:
+    keduanya masih memuat debitur berneraca di luar ambang (6.002 baris / 217
+    debitur pada EWS, 9 baris pada LGD). Menyaring keduanya membuat model EWS
+    dan LGD di `ml/models` harus dilatih ulang, dan itu belum dikerjakan.
+
+    Ini utang yang tercatat, bukan kelalaian. Sebelum menyeragamkannya, siapkan
+    waktu untuk melatih ulang `ews_logistic_champion.joblib` dan
+    `final_lgd_xgboost.pkl`; `abt_lgd` akan turun dari 214 ke 205 kejadian.
+    """
     abt_pd = build_abt_pd()
     abt_ews = build_abt_ews()
     abt_lgd = build_abt_lgd()

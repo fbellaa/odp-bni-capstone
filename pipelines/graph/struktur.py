@@ -24,9 +24,116 @@ TIPE_NODE_PIHAK = "pihak"
 TIPE_NODE_COUNTERPARTY = "counterparty"
 TIPE_NODE_ALAMAT = "alamat"
 
+# Ambang pemilik manfaat yang lazim dipakai penelaahan APU-PPT.
+AMBANG_PENGENDALI = 0.25
+
+# Sentinel `valid_to` terbuka. Dipakai hanya di dalam perhitungan segmen supaya
+# NaT tidak perlu diperlakukan khusus di setiap perbandingan; tidak pernah
+# ditulis ke tabel gold - kolomnya dikembalikan menjadi NaT sebelum keluar.
+_TAK_BERUJUNG = pd.Timestamp("2262-01-01")
+
 
 def _tanggal_default() -> pd.Timestamp:
     return pd.Timestamp(settings.tanggal_default_edge)
+
+
+# ------------------------------------------------------------ cap table PIT
+def _porsi_seimbang(bobot: np.ndarray) -> np.ndarray:
+    """Bagi `bobot` menjadi porsi 4 desimal yang berjumlah tepat 1,0.
+
+    Pembulatan ke 4 desimal menyisakan residu sampai 5e-5 per pemilik - pada
+    debitur dengan 505 pemilik tercatat residunya menumpuk sampai 2,5 pp dan
+    grafik kepemilikan kembali tidak berjumlah 100%. Residunya ditimpakan ke
+    pemegang terbesar: satu-satunya baris yang perubahan 1e-4 tidak mengubah
+    urutan maupun statusnya terhadap AMBANG_PENGENDALI.
+    """
+    porsi = np.round(bobot / bobot.sum(), 4)
+    porsi[porsi.argmax()] += round(1.0 - porsi.sum(), 4)
+    return porsi
+
+
+def _kapitalisasi_pit(rel: pd.DataFrame) -> pd.DataFrame:
+    """Ubah relasi kepemilikan ICIJ menjadi cap table yang berjumlah 100% SETIAP SAAT.
+
+    Menormalkan `bobot_relatif` per `cif_sk` saja tidak cukup. Rentang berlaku
+    relasi ICIJ saling tumpang tindih - hanya 86% debitur yang seluruh barisnya
+    berbagi satu interval - sehingga porsi yang dinormalkan atas seluruh riwayat
+    tetap meleset begitu antarmuka menyaringnya ke satu tanggal: diukur atas
+    tiap titik perubahan, 26,5% tampilan masih di luar rentang 0,8-1,2.
+
+    Karena itu normalisasinya dilakukan PER SEGMEN WAKTU. Untuk tiap debitur,
+    seluruh `valid_from` / `valid_to` dijadikan titik potong, dan di dalam tiap
+    selang [a, b) porsi para pemilik yang aktif dibagi ulang sampai berjumlah
+    1,0. Satu relasi ICIJ karena itu bisa menghasilkan beberapa baris - porsinya
+    naik-turun saat rekan pemiliknya masuk dan keluar, persis seperti cap table
+    sungguhan. `rel_id` menandai baris-baris yang berasal dari relasi yang sama.
+
+    Ukuran RELATIF antarpemilik tetap yang diundi `bobot_relatif`; yang berubah
+    hanya skalanya. Angka mutlaknya tetap sintesis - ICIJ tidak memuat persentase
+    saham sama sekali - dan itu wajib disebut di antarmuka.
+    """
+    kolom = [
+        "rel_id", "pihak_id", "cif_sk", "porsi_kepemilikan", "pengendali_efektif",
+        "valid_from", "valid_to", "src_icij_rel",
+    ]
+    potongan: list[pd.DataFrame] = []
+    for _, d in rel.groupby("cif_sk", sort=False):
+        mulai = d["valid_from"].to_numpy("datetime64[ns]")
+        henti = d["valid_to"].fillna(_TAK_BERUJUNG).to_numpy("datetime64[ns]")
+        bobot = d["bobot_relatif"].to_numpy(float)
+        batas = np.unique(np.concatenate([mulai, henti]))
+
+        tercakup = np.zeros(len(d), dtype=bool)
+        for a, b in zip(batas[:-1], batas[1:]):
+            # Sama persis dengan penyaringan di antarmuka: valid_from inklusif,
+            # valid_to eksklusif. Segmen [a, b) aktif bila relasi menutupi utuh.
+            aktif = (mulai <= a) & (henti >= b)
+            if not aktif.any():
+                continue
+            tercakup |= aktif
+            seg = d[aktif].copy()
+            seg["porsi_kepemilikan"] = _porsi_seimbang(bobot[aktif])
+            seg["valid_from"] = a
+            seg["valid_to"] = pd.NaT if b == _TAK_BERUJUNG else b
+            potongan.append(seg)
+
+        if not tercakup.all():
+            # 79 relasi ICIJ berinterval nol atau terbalik (end_date <= start_date):
+            # tidak pernah aktif pada tanggal mana pun, jadi tidak punya segmen.
+            # Tetap dibawa apa adanya - dinormalkan atas seluruh riwayat debitur -
+            # supaya edge `memiliki`-nya tidak hilang dari GOLD_GRAPH_EDGES.
+            sisa = d[~tercakup].copy()
+            sisa["porsi_kepemilikan"] = np.round(bobot[~tercakup] / bobot.sum(), 4)
+            potongan.append(sisa)
+
+    kap = pd.concat(potongan, ignore_index=True)
+    kap["pengendali_efektif"] = kap["porsi_kepemilikan"] >= AMBANG_PENGENDALI
+    kap = kap.sort_values(
+        ["cif_sk", "valid_from", "porsi_kepemilikan"], ascending=[True, True, False]
+    )
+    return kap[kolom].reset_index(drop=True)
+
+
+def _relasi_per_edge(kap: pd.DataFrame) -> pd.DataFrame:
+    """Ciutkan cap table bersegmen kembali menjadi satu baris per relasi ICIJ.
+
+    GOLD_GRAPH_EDGES sengaja TIDAK ikut dipecah per segmen. `_edge_aktif` di
+    antarmuka punya mode "seluruh riwayat" (`pada=None`) yang tidak menyaring
+    tanggal sama sekali; segmen-segmen itu akan terlihat sebagai edge paralel
+    dan menggandakan hitungan relasi serta derajat simpul. Satu edge per relasi,
+    berbobot porsi pada segmen paling awal, rentangnya membentang penuh.
+    """
+    urut = kap.sort_values("valid_from")
+    g = urut.groupby("rel_id", sort=False)
+    return pd.DataFrame(
+        {
+            "pihak_id": g["pihak_id"].first(),
+            "cif_sk": g["cif_sk"].first(),
+            "porsi_kepemilikan": g["porsi_kepemilikan"].first(),
+            "valid_from": g["valid_from"].min(),
+            "valid_to": g["valid_to"].apply(lambda s: pd.NaT if s.isna().any() else s.max()),
+        }
+    ).sort_index().reset_index(drop=True)
 
 
 # ------------------------------------------------------ DIM_PIHAK & relasi ICIJ
@@ -68,14 +175,15 @@ def buat_pihak_dan_relasi(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
     rel["pihak_id"] = rel["node_id_start"].map(peta_pihak).astype("int64")
 
     kepemilikan = rel[rel["kategori"] == "kepemilikan"].copy()
-    kepemilikan["porsi_kepemilikan"] = np.round(
+    kepemilikan["rel_id"] = np.arange(1, len(kepemilikan) + 1, dtype="int64")
+    kepemilikan["src_icij_rel"] = kepemilikan["link"].astype("string")
+    # Undian ini menentukan ukuran RELATIF antarpemilik, bukan persentasenya:
+    # skalanya ditetapkan `_kapitalisasi_pit` per segmen waktu supaya cap table
+    # tiap debitur berjumlah 100% pada setiap tanggal.
+    kepemilikan["bobot_relatif"] = np.round(
         rng.dirichlet(np.ones(3), size=len(kepemilikan))[:, 0] * 0.9 + 0.05, 4
     )
-    kepemilikan["pengendali_efektif"] = kepemilikan["porsi_kepemilikan"] >= 0.25
-    fact_kepemilikan = kepemilikan[
-        ["pihak_id", "cif_sk", "porsi_kepemilikan", "pengendali_efektif", "valid_from", "valid_to"]
-    ].copy()
-    fact_kepemilikan["src_icij_rel"] = kepemilikan["link"].astype("string")
+    fact_kepemilikan = _kapitalisasi_pit(kepemilikan)
 
     pengurus = rel[rel["kategori"] == "kepengurusan"].copy()
     jabatan = np.where(
@@ -93,9 +201,10 @@ def buat_pihak_dan_relasi(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
     )
 
     LOG.info(
-        "pihak %s, kepemilikan %s, kepengurusan %s",
+        "pihak %s, kepemilikan %s segmen dari %s relasi, kepengurusan %s",
         len(pihak),
         len(fact_kepemilikan),
+        len(kepemilikan),
         len(fact_kepengurusan),
     )
     return {
@@ -296,18 +405,20 @@ def buat_nodes_dan_edges(
 
     edges = []
 
-    # memiliki: pihak -> debitur
+    # memiliki: pihak -> debitur. Diciutkan dulu ke satu baris per relasi ICIJ -
+    # FACT_KEPEMILIKAN menyimpan cap table per segmen waktu, graf tidak.
     if len(kepemilikan):
+        milik = _relasi_per_edge(kepemilikan)
         edges.append(
             pd.DataFrame(
                 {
-                    "src_node_id": id_node(TIPE_NODE_PIHAK, kepemilikan["pihak_id"]),
-                    "dst_node_id": id_node(TIPE_NODE_DEBITUR, kepemilikan["cif_sk"]),
+                    "src_node_id": id_node(TIPE_NODE_PIHAK, milik["pihak_id"]),
+                    "dst_node_id": id_node(TIPE_NODE_DEBITUR, milik["cif_sk"]),
                     "rel_type": "memiliki",
-                    "bobot": kepemilikan["porsi_kepemilikan"],
+                    "bobot": milik["porsi_kepemilikan"],
                     "berarah": True,
-                    "valid_from": kepemilikan["valid_from"],
-                    "valid_to": kepemilikan["valid_to"],
+                    "valid_from": milik["valid_from"],
+                    "valid_to": milik["valid_to"],
                     "sumber": "icij",
                 }
             )

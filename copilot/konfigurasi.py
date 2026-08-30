@@ -47,8 +47,19 @@ UNGGAHAN_DIR = PROJECT_ROOT / "data" / "unggahan"
 # Pemisahan ini juga yang membuat profil "hemat" mungkin: satu model kecil
 # memegang dua peran sekaligus tanpa mengubah kode pemanggil.
 PROFIL_MODEL = {
-    # ~2,5 GB total. Aman di CPU-only sekalipun. Ini bawaan supaya repo bisa
-    # langsung dijalankan orang lain tanpa mencari berkas GGUF dulu.
+    # Bawaan sejak lapisan agentic AI (ml/agentic_ai) masuk repo. Lapisan itu
+    # memakai qwen2.5:7b-instruct untuk agent, narrator, dan extractor-nya;
+    # menyamakan peran di sini berarti Ollama cukup memuat satu bobot Qwen,
+    # bukan dua generasi sekaligus. Yang tersisa khas copilot tinggal embedding
+    # RAG kebijakan dan sintesis jawabannya.
+    "terpadu": {
+        "ekstraksi": "qwen2.5:7b-instruct",
+        "chat": "qwen2.5:7b-instruct",
+        "agen": "qwen2.5:7b-instruct",
+        "embedding": "nomic-embed-text",
+    },
+    # ~2,5 GB total. Aman di CPU-only sekalipun. Jalur mundur bila 7B tidak
+    # muat - mis. sesi tanpa GPU sama sekali.
     "hemat": {
         "ekstraksi": "qwen2.5:3b-instruct",
         "chat": "qwen2.5:3b-instruct",
@@ -65,7 +76,7 @@ PROFIL_MODEL = {
     },
 }
 
-PROFIL_BAWAAN = "hemat"
+PROFIL_BAWAAN = "terpadu"
 
 # Perkiraan jejak memori per model pada kuantisasi bawaan Ollama (Q4_K_M),
 # dipakai `copilot.llm.klien.ringkas_anggaran()` untuk memperingatkan sebelum
@@ -74,6 +85,11 @@ PERKIRAAN_GB = {
     "qwen2.5:3b-instruct": 2.0,
     "qwen2.5:7b-instruct": 4.7,
     "nomic-embed-text": 0.3,
+    # Bukan peran copilot - VLM dipanggil ml/agentic_ai untuk transkripsi
+    # halaman hasil scan. Dicatat di sini supaya angkanya benar bila seseorang
+    # menimpa salah satu peran ke model ini, dan supaya jejaknya tidak jatuh ke
+    # PERKIRAAN_GB_TIDAK_DIKENAL yang menebak 6 GB.
+    "qwen3-vl:4b-instruct": 3.0,
 }
 PERKIRAAN_GB_TIDAK_DIKENAL = 6.0
 
@@ -115,6 +131,13 @@ class Pengaturan:
     ukuran_potongan: int = int(os.getenv("COPILOT_UKURAN_POTONGAN", "1200"))
     tumpang_tindih: int = int(os.getenv("COPILOT_TUMPANG_TINDIH", "150"))
     top_k: int = int(os.getenv("COPILOT_TOP_K", "5"))
+
+    # Bobot skor leksikal pada peringkat akhir (sisanya kosinus). Embedding
+    # kecil seperti nomic-embed-text menempatkan parafrase umum di atas istilah
+    # persis peraturan ("hapus buku", "CKPN", "agunan yang diambil alih"), dan
+    # analis kredit mengetik istilah persis itu. Nol mengembalikan perilaku
+    # dense murni.
+    bobot_leksikal: float = float(os.getenv("COPILOT_BOBOT_LEKSIKAL", "0.35"))
 
     # Batas putaran tool calling. Agen yang tidak berhenti akan menghabiskan
     # sesi notebook, bukan sekadar melambat.

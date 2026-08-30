@@ -22,9 +22,9 @@ BATAS DATA YANG HARUS DISEBUT DI ANTARMUKA
 1. KEPEMILIKAN HANYA SATU LAPIS. Tidak ada satu pun dari 23.219 `pihak` yang
    sekaligus menjadi debitur (irisan `dim_pihak.src_icij_node_id` dengan
    `map_entitas_graf.src_icij_node_id` = 0). Relasi `memiliki` karena itu selalu
-   pihak -> badan hukum dan berhenti di situ. Rantai berlapis 2-5 tingkat di
-   `dummy_data.penelusuran_kepemilikan` tidak punya padanan pada data nyata, dan
-   `kepemilikan_langsung()` di sini TIDAK mengarang lapisan tambahan.
+   pihak -> badan hukum dan berhenti di situ. Rantai kepemilikan berlapis 2-5
+   tingkat tidak punya padanan pada data nyata, dan `kepemilikan_langsung()` di
+   sini TIDAK mengarang lapisan tambahan.
 
 2. PORSI KEPEMILIKAN ADALAH SINTESIS, BUKAN DATA ICIJ. ICIJ tidak memuat
    persentase saham sama sekali - yang nyata di sana hanya FAKTA relasi "A
@@ -55,7 +55,7 @@ import streamlit as st
 AKAR = Path(__file__).resolve().parents[3]
 DIR_GOLD = AKAR / "data" / "gold"
 
-# `pipelines` hidup di AKAR, bukan di app/ui. `streamlit run app/ui/app.py`
+# `pipelines` hidup di AKAR, bukan di app/ui. `streamlit run app/ui/Copilot_Pengajuan.py`
 # hanya menaruh direktori skrip di sys.path - bukan direktori kerja - sehingga
 # `import pipelines` di `resolusi_calon()` gagal dengan ModuleNotFoundError.
 # Dua cara peluncuran lain kebetulan menutupinya: `python -m streamlit ...` dari

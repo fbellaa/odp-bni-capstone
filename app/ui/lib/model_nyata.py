@@ -1,14 +1,17 @@
-"""Lapisan model sungguhan: artefak `ml/models` di atas data emas `data/gold`.
+"""Lapisan model sungguhan: artefak `ml/artifacts` di atas data emas `data/gold`.
 
 Berbeda dari `lib/mock_engine.py` yang berisi rumus tiruan deterministik, modul
 ini benar-benar memuat model yang sudah dilatih:
 
-    ml/models/pd_champion.joblib          XGBoost + kalibrator logistik   -> PD 12 bulan
-    ml/models/ews_logistic_champion.joblib  Regresi logistik              -> EWS 6 bulan
-    ml/models/final_lgd_xgboost.pkl       XGBoost regresi                 -> LGD
+    ml/artifacts/pd/pd_champion_new.joblib          XGBoost      -> skor default 12 bulan
+    ml/artifacts/ews/ews_xgboost_champion.joblib    XGBoost      -> skor default 6 bulan
+    ml/artifacts/lgd/final_lgd_xgboost_new.pkl      XGBoost      -> LGD
+    ml/artifacts/pd_cluster/pd_cluster_champion.joblib  KMeans   -> ruang klaster portofolio
 
-serta membangun ruang klaster portofolio dari `data/gold/abt_pd.parquet` untuk
-memetakan pengajuan baru terhadap klaster default dan non-default.
+Tiap artefak datang bersama `*_decision_policy.json` yang menyatakan ambang
+peringatan dan pita risikonya. Ambang itu dibaca dari berkas kebijakan, bukan
+ditulis ulang di sini — dan bukan pula diambil dari `risk_cutoffs` yang
+tertinggal di dalam joblib (lihat `muat_pd`).
 
 Semua fungsi berat dibungkus cache Streamlit supaya halaman tetap responsif;
 kalau artefak atau dependensi tidak ada, fungsi mengembalikan `None` dan halaman
@@ -16,15 +19,18 @@ memberi tahu apa yang kurang, bukan melempar traceback.
 
 Catatan kompatibilitas artefak
 ------------------------------
-1. Pipeline LGD menyimpan transformer `"passthrough"` sebagai string. scikit-learn
-   versi baru menolaknya di `ColumnTransformer.transform`, jadi transformasinya
-   dilakukan manual: one-hot untuk kolom kategorikal, kolom numerik apa adanya.
-2. Preprocessor EWS dilatih tanpa rating `D` pada kamus one-hot, sementara
-   regresi logistiknya berdimensi satu kolom lebih besar. Kolom rating `D`
-   karena itu disisipkan kembali pada posisi blok rating sebelum skor dihitung.
+1. Model PD versi ini TIDAK terkalibrasi. Keluarannya skor peringkat, dan layar
+   menyebutnya begitu — bukan "PD terkalibrasi" seperti pada versi sebelumnya.
+2. Pipeline LGD menyimpan transformer `"passthrough"` sebagai string. scikit-learn
+   versi baru menolaknya di `ColumnTransformer.transform`, jadi ada jalur cadangan
+   yang menyusun matriksnya manual bila `predict` langsung gagal.
+3. Artefak dipickle dengan scikit-learn 1.3.2. Pada lingkungan dengan versi lebih
+   baru, pemuatannya memunculkan `InconsistentVersionWarning` — ditelan di sini
+   supaya tidak membanjiri layar, tetapi versinya tetap perlu dijaga.
 """
 from __future__ import annotations
 
+import json
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,21 +40,28 @@ import pandas as pd
 import streamlit as st
 
 AKAR = Path(__file__).resolve().parents[3]
-DIR_MODEL = AKAR / "ml" / "models"
+DIR_ARTEFAK = AKAR / "ml" / "artifacts"
 DIR_GOLD = AKAR / "data" / "gold"
 
 # Galat pemuatan artefak disimpan di sini, bukan ditelan diam-diam: halaman
 # perlu bisa menyebut alasannya saat sebuah model tidak muncul.
 GALAT_MUAT: dict[str, str] = {}
 
-BERKAS_PD = DIR_MODEL / "pd_champion.joblib"
-BERKAS_EWS = DIR_MODEL / "ews_logistic_champion.joblib"
-BERKAS_LGD = DIR_MODEL / "final_lgd_xgboost.pkl"
+BERKAS_PD = DIR_ARTEFAK / "pd" / "pd_champion_new.joblib"
+KEBIJAKAN_PD = DIR_ARTEFAK / "pd" / "pd_decision_policy.json"
+BERKAS_EWS = DIR_ARTEFAK / "ews" / "ews_xgboost_champion.joblib"
+BERKAS_LGD = DIR_ARTEFAK / "lgd" / "final_lgd_xgboost_new.pkl"
+BERKAS_KLASTER = DIR_ARTEFAK / "pd_cluster" / "pd_cluster_champion.joblib"
+
+# Berkas LGD berekstensi `.pkl` tetapi ditulis joblib, bukan `pickle` polos.
+# Dibaca dengan `pickle.load` ia menghasilkan array nama fitur lalu gagal di
+# tengah jalan; seluruh pemuatan artefak di modul ini karena itu lewat joblib.
 
 TAHUN_PENILAIAN = 2026
 
-# Urutan rating internal, dipakai sebagai fitur ordinal pada EWS dan untuk
-# menerjemahkan PD menjadi kelas rating pada tampilan.
+# Urutan rating internal. Dipakai sebagai fitur ordinal pada EWS dan sebagai
+# label pada peta klaster. Antarmuka sendiri tidak lagi menerjemahkan PD menjadi
+# kelas rating - yang ditampilkan adalah pita risiko dari berkas kebijakan PD.
 URUTAN_RATING = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C", "D"]
 ORD_RATING = {r: i + 1 for i, r in enumerate(URUTAN_RATING)}
 
@@ -178,7 +191,20 @@ def label_fitur(kolom: str) -> str:
 # --------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def muat_pd() -> dict | None:
-    """Bundel PD: pipeline XGBoost, kalibrator, daftar fitur, ambang risiko."""
+    """Bundel PD: pipeline XGBoost, daftar fitur, dan ambang pita risiko.
+
+    Dua hal yang berubah sejak artefak pindah ke `ml/artifacts`:
+
+    1. Model ini TIDAK terkalibrasi (`pd_decision_policy.json` menyebutnya
+       `raw_xgboost_probability`), dan bundelnya memang tidak membawa
+       kalibrator. Keluarannya skor peringkat, bukan probabilitas yang boleh
+       dibaca sebagai PD regulatoris.
+    2. `risk_cutoffs` di dalam joblib tertinggal dari versi sebelumnya. Kuantil
+       skor model ini sendiri atas `abt_pd` adalah 0,079 / 0,273 / 0,643,
+       sedangkan joblib menyimpan 0,008 / 0,037 / 0,168 — memakainya membuat
+       pita "rendah" kosong sama sekali dan sepertiga portofolio jatuh ke pita
+       tertinggi. Yang dipakai karena itu ambang pada berkas kebijakan.
+    """
     if not BERKAS_PD.exists():
         GALAT_MUAT["pd"] = f"berkas tidak ada: {BERKAS_PD}"
         return None
@@ -187,41 +213,64 @@ def muat_pd() -> dict | None:
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return joblib.load(BERKAS_PD)
+            bundel = dict(joblib.load(BERKAS_PD))
     except Exception as exc:
         GALAT_MUAT["pd"] = f"{type(exc).__name__}: {exc}"
         return None
 
+    bundel["risk_cutoffs_bundel"] = bundel.get("risk_cutoffs")
+    kebijakan = _baca_kebijakan(KEBIJAKAN_PD)
+    if kebijakan and kebijakan.get("risk_cutoffs"):
+        bundel["risk_cutoffs"] = kebijakan["risk_cutoffs"]
+        bundel["asal_cutoffs"] = KEBIJAKAN_PD.name
+    else:
+        bundel["asal_cutoffs"] = "bundel joblib (berkas kebijakan tidak terbaca)"
+    bundel["kebijakan"] = kebijakan or {}
+    bundel["terkalibrasi"] = bool((kebijakan or {}).get("calibrated", False))
+    return bundel
 
-@st.cache_resource(show_spinner=False)
-def muat_ews() -> object | None:
-    if not BERKAS_EWS.exists():
-        GALAT_MUAT["ews"] = f"berkas tidak ada: {BERKAS_EWS}"
+
+def _baca_kebijakan(berkas: Path) -> dict | None:
+    """Berkas `*_decision_policy.json` yang menyertai satu artefak model."""
+    if not berkas.exists():
         return None
     try:
-        import joblib
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return joblib.load(BERKAS_EWS)
+        return json.loads(berkas.read_text(encoding="utf-8"))
     except Exception as exc:
-        GALAT_MUAT["ews"] = f"{type(exc).__name__}: {exc}"
+        GALAT_MUAT[berkas.stem] = f"{type(exc).__name__}: {exc}"
         return None
+
+
+@st.cache_resource(show_spinner=False)
+def muat_ews() -> dict | None:
+    """Bundel EWS: pipeline XGBoost, ambang peringatan, dan tiga pita risiko."""
+    return _muat_bundel("ews", BERKAS_EWS)
 
 
 @st.cache_resource(show_spinner=False)
 def muat_lgd() -> dict | None:
-    if not BERKAS_LGD.exists():
-        GALAT_MUAT["lgd"] = f"berkas tidak ada: {BERKAS_LGD}"
+    return _muat_bundel("lgd", BERKAS_LGD)
+
+
+@st.cache_resource(show_spinner=False)
+def muat_klaster() -> dict | None:
+    """Artefak klaster portofolio: imputer, scaler, PCA, dan KMeans terlatih."""
+    return _muat_bundel("klaster", BERKAS_KLASTER)
+
+
+def _muat_bundel(nama: str, berkas: Path) -> dict | None:
+    """Pemuatan artefak yang seragam; kegagalannya dicatat, bukan dilempar."""
+    if not berkas.exists():
+        GALAT_MUAT[nama] = f"berkas tidak ada: {berkas}"
         return None
     try:
         import joblib
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return joblib.load(BERKAS_LGD)
+            return joblib.load(berkas)
     except Exception as exc:
-        GALAT_MUAT["lgd"] = f"{type(exc).__name__}: {exc}"
+        GALAT_MUAT[nama] = f"{type(exc).__name__}: {exc}"
         return None
 
 
@@ -245,6 +294,7 @@ def status_lapisan_model() -> dict:
         "pd": muat_pd() is not None,
         "ews": muat_ews() is not None,
         "lgd": muat_lgd() is not None,
+        "klaster": muat_klaster() is not None,
         "gold": abt is not None,
         "baris_abt": 0 if abt is None else len(abt),
     }
@@ -578,11 +628,20 @@ class KontribusiFitur:
 
 @dataclass
 class HasilPD:
-    pd_kalibrasi: float
-    pd_mentah: float
+    """Keluaran model PD untuk satu pengajuan.
+
+    `skor` adalah probabilitas mentah XGBoost. Versi sebelumnya membawa dua
+    angka - mentah dan terkalibrasi - karena bundelnya menyertakan kalibrator
+    logistik. Artefak sekarang tidak, dan menyebut satu angka sebagai
+    "terkalibrasi" hanya karena namanya begitu di kode lama akan membuat layar
+    menjanjikan ketelitian yang tidak dimiliki model ini.
+    """
+
+    skor: float
     band: str
     warna: str
     cutoffs: dict
+    terkalibrasi: bool
     kontribusi: list[KontribusiFitur]
     fitur_rujukan: list[str]
     baris: pd.DataFrame
@@ -597,13 +656,25 @@ BAND_WARNA = {
     "Risiko sangat tinggi": "#7A3C00",
 }
 
+# Urutan pita mengikuti `risk_band_definition` pada pd_decision_policy.json:
+# Low, Medium, High, Very High - empat, bukan tiga. Ambangnya kuantil skor atas
+# portofolio pengembangan, jadi pita ini peringkat relatif terhadap portofolio,
+# bukan tingkat kerugian absolut.
+URUTAN_BAND = ["Risiko rendah", "Risiko sedang", "Risiko tinggi", "Risiko sangat tinggi"]
+BAND_KEBIJAKAN = {
+    "Low": "Risiko rendah",
+    "Medium": "Risiko sedang",
+    "High": "Risiko tinggi",
+    "Very High": "Risiko sangat tinggi",
+}
 
-def _band(pd_nilai: float, cutoffs: dict) -> str:
-    if pd_nilai < cutoffs["q50"]:
+
+def _band(nilai: float, cutoffs: dict) -> str:
+    if nilai <= cutoffs["q50"]:
         return "Risiko rendah"
-    if pd_nilai < cutoffs["q80"]:
+    if nilai <= cutoffs["q80"]:
         return "Risiko sedang"
-    if pd_nilai < cutoffs["q95"]:
+    if nilai <= cutoffs["q95"]:
         return "Risiko tinggi"
     return "Risiko sangat tinggi"
 
@@ -646,7 +717,7 @@ def _kontribusi_pd(bundel: dict, baris: pd.DataFrame, jumlah: int = 10) -> list[
 
 
 def skor_pd(entitas: dict, dengan_kontribusi: bool = True) -> HasilPD | None:
-    """PD 12 bulan terkalibrasi untuk satu pengajuan.
+    """Skor default 12 bulan untuk satu pengajuan.
 
     `dengan_kontribusi=False` melewati perhitungan SHAP — dipakai halaman
     simulasi yang menyapu puluhan skenario sekaligus dan hanya butuh angkanya.
@@ -659,17 +730,15 @@ def skor_pd(entitas: dict, dengan_kontribusi: bool = True) -> HasilPD | None:
         return None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        mentah = float(bundel["model"].predict_proba(baris[bundel["features"]])[:, 1][0])
-        z = np.log(np.clip(mentah, 1e-6, 1 - 1e-6) / (1 - np.clip(mentah, 1e-6, 1 - 1e-6)))
-        kalibrasi = float(bundel["calibrator"].predict_proba(np.array([[z]]))[:, 1][0])
+        skor = float(bundel["model"].predict_proba(baris[bundel["features"]])[:, 1][0])
     cutoffs = bundel["risk_cutoffs"]
-    band = _band(kalibrasi, cutoffs)
+    band = _band(skor, cutoffs)
     return HasilPD(
-        pd_kalibrasi=kalibrasi,
-        pd_mentah=mentah,
+        skor=skor,
         band=band,
         warna=BAND_WARNA[band],
         cutoffs=cutoffs,
+        terkalibrasi=bool(bundel.get("terkalibrasi", False)),
         kontribusi=_kontribusi_pd(bundel, baris) if dengan_kontribusi else [],
         fitur_rujukan=rujukan_dipakai,
         baris=baris,
@@ -717,14 +786,22 @@ def skor_lgd(entitas: dict) -> float | None:
         "app_perusahaan_baru": str(float(entitas.get("umur_usaha_thn") or 10) < 3),
         "app_dokumen_ringkas": str(bool(entitas.get("dokumen_ringkas", False))),
     }])
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            Z = _matriks_lgd(bundel, baris)
-            nilai = float(bundel["model"].steps[-1][1].predict(Z)[0])
-        return float(np.clip(nilai, 0.0, 1.0))
-    except Exception:
-        return None
+    # Jalur utama memakai pipeline apa adanya. Jalur cadangan menyusun matriks
+    # sendiri, untuk artefak lama yang menyimpan transformer "passthrough"
+    # sebagai string dan ditolak scikit-learn versi baru.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            nilai = float(bundel["model"].predict(baris[bundel["features"]])[0])
+        except Exception:
+            try:
+                Z = _matriks_lgd(bundel, baris)
+                nilai = float(bundel["model"].steps[-1][1].predict(Z)[0])
+            except Exception as exc:
+                GALAT_MUAT["lgd_prediksi"] = f"{type(exc).__name__}: {exc}"
+                return None
+    # `lgd_decision_policy.json`: keluaran dijepit ke [0, 1], tanpa kalibrasi.
+    return float(np.clip(nilai, 0.0, 1.0))
 
 
 # --------------------------------------------------------------------------
@@ -754,28 +831,131 @@ def siapkan_fitur_ews(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def skor_ews(df_siap: pd.DataFrame) -> np.ndarray | None:
-    """Probabilitas default 6 bulan untuk panel yang sudah disiapkan.
+    """Skor peringatan dini 6 bulan untuk panel yang sudah disiapkan.
 
-    Kolom one-hot rating `D` disisipkan kembali (lihat catatan modul).
+    Ditulis ulang untuk artefak XGBoost pada `ml/artifacts/ews`. Versi
+    sebelumnya menghitung sendiri hasil kali koefisien regresi logistik dan
+    menyisipkan kolom one-hot rating `D` yang hilang dari preprocessor lama —
+    seluruhnya tidak berlaku lagi, dan kalau dibiarkan ia gagal diam-diam
+    menjadi `None` karena terbungkus `try/except`.
     """
-    pipa = muat_ews()
-    if pipa is None:
+    bundel = muat_ews()
+    if bundel is None:
+        return None
+    kurang = [f for f in bundel["features"] if f not in df_siap.columns]
+    if kurang:
+        GALAT_MUAT["ews_prediksi"] = f"kolom panel tidak ada: {', '.join(kurang[:5])}"
         return None
     try:
-        ct, lr = pipa.steps[0][1], pipa.steps[-1][1]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            Z = ct.transform(df_siap[list(pipa.feature_names_in_)])
-        Z = np.asarray(Z.todense()) if hasattr(Z, "todense") else np.asarray(Z)
-        if Z.shape[1] == lr.coef_.shape[1] - 1:
-            kamus = list(ct.transformers_[1][1].steps[-1][1].categories_[0])
-            sisip = len(ct.transformers_[0][2]) + len(kamus)
-            kolom_d = (df_siap["app_rating_internal"].astype(str) == "D").astype(float).values
-            Z = np.hstack([Z[:, :sisip], kolom_d.reshape(-1, 1), Z[:, sisip:]])
-        skor = Z @ lr.coef_.ravel() + float(lr.intercept_[0])
-        return 1.0 / (1.0 + np.exp(-skor))
-    except Exception:
+            return bundel["model"].predict_proba(df_siap[bundel["features"]])[:, 1]
+    except Exception as exc:
+        GALAT_MUAT["ews_prediksi"] = f"{type(exc).__name__}: {exc}"
         return None
+
+
+# Pita EWS hanya tiga - LOW, MEDIUM, HIGH - dan itu memang kontrak artefaknya,
+# berbeda dari empat pita PD. Keduanya sengaja tidak diseragamkan: ambangnya
+# datang dari sebaran skor yang berbeda, atas target yang berbeda pula.
+PITA_EWS = {"LOW": "Pantauan biasa", "MEDIUM": "Perlu diperhatikan", "HIGH": "Peringatan dini"}
+WARNA_EWS = {"LOW": "#2A8080", "MEDIUM": "#FF8000", "HIGH": "#7A3C00"}
+
+
+def _pita_ews(nilai: float, cutoffs: dict) -> str:
+    if nilai < cutoffs["q80"]:
+        return "LOW"
+    if nilai < cutoffs["q95"]:
+        return "MEDIUM"
+    return "HIGH"
+
+
+@st.cache_data(show_spinner=False)
+def _panel_ews() -> pd.DataFrame | None:
+    """Panel bulanan lengkap dengan fitur turunannya, disiapkan sekali."""
+    abt = gold("abt_ews")
+    if abt is None:
+        return None
+    try:
+        return siapkan_fitur_ews(abt)
+    except Exception as exc:
+        GALAT_MUAT["ews_panel"] = f"{type(exc).__name__}: {exc}"
+        return None
+
+
+@dataclass
+class PantauanEWS:
+    """Status peringatan dini fasilitas milik debitur yang tercocok."""
+
+    tanggal: pd.Timestamp
+    tabel: pd.DataFrame           # cif_sk, facility_id, snapshot, skor, pita, alarm
+    ambang: float
+    cutoffs: dict
+    cif_tanpa_fasilitas: int      # tercocok, tetapi tidak punya baris pada panel
+
+    @property
+    def jumlah_alarm(self) -> int:
+        return int(self.tabel["alarm"].sum()) if not self.tabel.empty else 0
+
+    def cacah_pita(self) -> dict:
+        if self.tabel.empty:
+            return {}
+        return self.tabel["pita"].value_counts().to_dict()
+
+
+def ews_afiliasi(cif: tuple[int, ...], tanggal) -> PantauanEWS | None:
+    """Status peringatan dini debitur eksisting yang tercocok dari dokumen.
+
+    Ini satu-satunya cara EWS masuk ke halaman pengajuan, dan alasannya penting:
+    pemohon baru TIDAK punya perilaku fasilitas — tidak ada tunggakan,
+    pemakaian plafon, atau covenant yang bisa dilanggar — sehingga tidak ada
+    satu pun dari 26 fitur model ini yang terisi untuknya. Yang punya perilaku
+    adalah afiliasinya, dan memburuknya mereka justru pertanyaan kredit yang
+    sah: apakah grup ini sedang menuju masalah selagi salah satu anggotanya
+    meminta fasilitas baru.
+
+    Skor dibaca pada snapshot terakhir yang tidak melewati `tanggal`, supaya
+    penelaahan tidak memakai perilaku yang belum terjadi pada tanggal telaah.
+    """
+    if not cif:
+        return None
+    bundel = muat_ews()
+    panel = _panel_ews()
+    if bundel is None or panel is None:
+        return None
+
+    tanggal = pd.Timestamp(tanggal)
+    bagian = panel[panel["cif_sk"].isin(cif)].copy()
+    bagian["snapshot_date"] = pd.to_datetime(bagian["snapshot_date"])
+    bagian = bagian[bagian["snapshot_date"] <= tanggal]
+    if bagian.empty:
+        return PantauanEWS(tanggal, pd.DataFrame(), float(bundel["threshold"]),
+                           dict(bundel["risk_cutoffs"]), len(set(cif)))
+
+    akhir = (bagian.sort_values("snapshot_date")
+             .groupby("facility_id", as_index=False).last())
+    skor = skor_ews(akhir)
+    if skor is None:
+        return None
+
+    cutoffs = dict(bundel["risk_cutoffs"])
+    ambang = float(bundel["threshold"])
+    tabel = pd.DataFrame({
+        "cif_sk": akhir["cif_sk"].astype(int).values,
+        "facility_id": akhir["facility_id"].values,
+        "snapshot": akhir["snapshot_date"].values,
+        "skor": skor,
+        "pita": [_pita_ews(float(v), cutoffs) for v in skor],
+        "alarm": skor >= ambang,
+        "dpd": akhir["perilaku_dpd"].values if "perilaku_dpd" in akhir else np.nan,
+        "kolektibilitas": (akhir["perilaku_kolektibilitas"].values
+                           if "perilaku_kolektibilitas" in akhir else np.nan),
+        "pemakaian_plafon": (akhir["perilaku_pemakaian_plafon"].values
+                             if "perilaku_pemakaian_plafon" in akhir else np.nan),
+    }).sort_values("skor", ascending=False).reset_index(drop=True)
+
+    tanpa = len(set(cif) - set(tabel["cif_sk"].tolist()))
+    return PantauanEWS(tanggal, tabel, ambang, cutoffs, tanpa)
 
 
 # --------------------------------------------------------------------------
@@ -794,37 +974,50 @@ class RuangKlaster:
 
 @st.cache_resource(show_spinner=False)
 def ruang_klaster(k: int = 4) -> RuangKlaster | None:
-    """K-Means di ruang fitur baku, ditampilkan lewat proyeksi PCA dua sumbu.
+    """Ruang klaster portofolio dari artefak `pd_cluster`.
 
-    Klaster tidak dilatih memakai label default. Label hanya dipakai sesudahnya
-    untuk memberi nama tiap klaster ("kantong default", "inti sehat"), sehingga
-    posisi pengajuan baru terbaca sebagai kemiripan struktur keuangan, bukan
-    sebagai prediksi kedua.
+    Sebelumnya K-Means dilatih ulang setiap kali halaman dibuka, atas dua belas
+    fitur pilihan modul ini. Sekarang imputer, scaler, PCA, dan KMeans datang
+    terlatih dari `ml/artifacts/pd_cluster` bersama daftar fiturnya sendiri —
+    jadi peta yang dilihat analis adalah peta yang sama dengan yang dievaluasi
+    di notebook, bukan hasil pelatihan ulang yang kebetulan mirip.
+
+    Argumen `k` dipertahankan demi pemanggil lama tetapi tidak lagi dipakai:
+    jumlah klaster ditentukan artefak.
     """
+    bundel = muat_klaster()
     abt = gold("abt_pd")
-    if abt is None:
-        return None
-    try:
-        from sklearn.cluster import KMeans
-        from sklearn.decomposition import PCA
-        from sklearn.impute import SimpleImputer
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler
-    except Exception:
+    if bundel is None or abt is None:
         return None
 
+    fitur = list(bundel["features"])
     data = abt[abt["y_default_12bln"].notna()].copy()
-    X = data[FITUR_KLASTER].replace([np.inf, -np.inf], np.nan).reset_index(drop=True)
-    pra = Pipeline([("imputer", SimpleImputer(strategy="median")), ("skala", StandardScaler())])
-    Z = pra.fit_transform(X)
-    km = KMeans(n_clusters=k, n_init=10, random_state=7).fit(Z)
-    pca = PCA(n_components=2, random_state=7).fit(Z)
-    P = pca.transform(Z)
+    if "fin_ebitda_nonpositif" in fitur and "fin_ebitda_nonpositif" not in data:
+        data["fin_ebitda_nonpositif"] = (data["fin_ebitda_rp"] <= 0).astype(int)
+    kurang = [f for f in fitur if f not in data.columns]
+    if kurang:
+        GALAT_MUAT["klaster"] = f"kolom emas tidak ada: {', '.join(kurang[:5])}"
+        return None
+
+    X = data[fitur].replace([np.inf, -np.inf], np.nan).reset_index(drop=True)
+    X = _jepit_klaster(X, bundel.get("clip_bounds") or {})
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # Urutan artefak: imputer -> scaler -> PCA(22 komponen) -> KMeans.
+            # KMeans dilatih di ruang PCA, jadi ia diberi P, bukan Z; dua
+            # komponen pertama P itu juga yang menjadi sumbu peta.
+            Z = bundel["scaler"].transform(bundel["imputer"].transform(X))
+            P = bundel["pca"].transform(Z)
+            label = bundel["kmeans"].predict(P)
+    except Exception as exc:
+        GALAT_MUAT["klaster"] = f"{type(exc).__name__}: {exc}"
+        return None
 
     titik = pd.DataFrame({
         "x": P[:, 0],
         "y": P[:, 1],
-        "klaster": km.labels_,
+        "klaster": label,
         "default": data["y_default_12bln"].astype(int).values,
         "rating": data["app_rating_internal"].astype(str).values,
         "penjualan": data["fin_penjualan_rp"].values,
@@ -836,22 +1029,56 @@ def ruang_klaster(k: int = 4) -> RuangKlaster | None:
         .agg(jumlah=("default", "size"), tingkat_default=("default", "mean"))
         .reset_index()
     )
-    for kolom in FITUR_KLASTER:
+    # Profil klaster tetap ditampilkan pada dua belas rasio yang terbaca analis,
+    # bukan seluruh fitur artefak - tabel 37 kolom tidak menolong siapa pun.
+    profil = [f for f in FITUR_KLASTER if f in data.columns]
+    for kolom in profil:
         ringkas[kolom] = [
-            float(X.loc[titik["klaster"] == c, kolom].median()) for c in ringkas["klaster"]
+            float(pd.to_numeric(data.loc[(titik["klaster"] == c).values, kolom],
+                                errors="coerce").median())
+            for c in ringkas["klaster"]
         ]
     ringkas = ringkas.sort_values("tingkat_default", ascending=False).reset_index(drop=True)
-    ringkas["nama"] = _nama_klaster(ringkas)
+    ringkas["nama"] = _nama_klaster_artefak(ringkas, bundel)
 
-    pusat = pd.DataFrame(pca.transform(km.cluster_centers_), columns=["x", "y"])
+    # Pusat klaster sudah berada di ruang PCA; dua komponen pertamanya langsung
+    # menjadi koordinat peta tanpa transformasi lagi.
+    pusat = pd.DataFrame(bundel["kmeans"].cluster_centers_[:, :2], columns=["x", "y"])
     pusat["klaster"] = range(len(pusat))
     pusat = pusat.merge(ringkas[["klaster", "nama", "tingkat_default"]], on="klaster")
 
+    varians = getattr(bundel["pca"], "explained_variance_ratio_", [0.0, 0.0])
     return RuangKlaster(
         titik=titik, ringkas=ringkas, pusat=pusat,
-        varians=(float(pca.explained_variance_ratio_[0]), float(pca.explained_variance_ratio_[1])),
-        _pra=pra, _km=km, _pca=pca,
+        varians=(float(varians[0]), float(varians[1])),
+        _pra=bundel, _km=bundel["kmeans"], _pca=bundel["pca"],
     )
+
+
+def _jepit_klaster(X: pd.DataFrame, batas: dict) -> pd.DataFrame:
+    """Terapkan `clip_bounds` artefak; rasio ekstrem dijepit seperti saat latih."""
+    if not batas:
+        return X
+    Y = X.copy()
+    for kolom, rentang in batas.items():
+        if kolom not in Y.columns or not isinstance(rentang, (list, tuple)) or len(rentang) != 2:
+            continue
+        Y[kolom] = pd.to_numeric(Y[kolom], errors="coerce").clip(rentang[0], rentang[1])
+    return Y
+
+
+def _nama_klaster_artefak(ringkas: pd.DataFrame, bundel: dict) -> list[str]:
+    """Nama klaster dari `cluster_segments` artefak, dengan cadangan lokal."""
+    segmen = {int(k): str(v) for k, v in (bundel.get("cluster_segments") or {}).items()}
+    terjemah = {
+        "High Risk / Default-like": "Kantong default",
+        "Low Risk / Non-default-like": "Inti sehat",
+    }
+    nama = []
+    for i, c in enumerate(ringkas["klaster"]):
+        asli = segmen.get(int(c))
+        nama.append(terjemah.get(asli, asli) if asli else _nama_klaster(ringkas)[i])
+    return nama
 
 
 def _nama_klaster(ringkas: pd.DataFrame) -> list[str]:
@@ -882,8 +1109,10 @@ def posisi_klaster(entitas: dict, hasil_pd: HasilPD | None = None) -> PosisiKlas
     if baris is None or baris.empty:
         return None
 
+    bundel = ruang._pra
+    fitur = list(bundel["features"])
     nilai = {}
-    for kolom in FITUR_KLASTER:
+    for kolom in fitur:
         if kolom in baris.columns:
             nilai[kolom] = pd.to_numeric(baris[kolom].iat[0], errors="coerce")
         elif kolom == "app_plafon_thd_penjualan":
@@ -891,12 +1120,17 @@ def posisi_klaster(entitas: dict, hasil_pd: HasilPD | None = None) -> PosisiKlas
                 float(entitas.get("penjualan_tahunan", 1)), 1.0
             )
         else:
+            # Fitur yang tidak ada pada baris pengajuan dibiarkan kosong dan
+            # diisi imputer artefak - nilai yang sama dengan saat pelatihan.
             nilai[kolom] = np.nan
-    X = pd.DataFrame([nilai])[FITUR_KLASTER]
+    X = _jepit_klaster(pd.DataFrame([nilai])[fitur], bundel.get("clip_bounds") or {})
 
-    Z = ruang._pra.transform(X)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        Z = bundel["scaler"].transform(bundel["imputer"].transform(X))
     P = ruang._pca.transform(Z)
-    jarak = np.linalg.norm(ruang._km.cluster_centers_ - Z[0], axis=1)
+    # Jarak diukur di ruang PCA, ruang yang sama tempat KMeans dilatih.
+    jarak = np.linalg.norm(ruang._km.cluster_centers_ - P[0], axis=1)
     idx = int(np.argmin(jarak))
 
     tabel = ruang.ringkas.copy()
@@ -964,13 +1198,12 @@ def evaluasi_pd() -> dict | None:
                 warnings.simplefilter("ignore")
                 p = bundel["model"].predict_proba(bagian[bundel["features"]])[:, 1]
             y = bagian["y_default_12bln"].astype(int).values
-            z = np.log(np.clip(p, 1e-6, 1 - 1e-6) / (1 - np.clip(p, 1e-6, 1 - 1e-6)))
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                pk = bundel["calibrator"].predict_proba(z.reshape(-1, 1))[:, 1]
+            # Artefak ini tidak punya kalibrator, jadi seluruh metrik dihitung
+            # atas skor mentah. Kunci `skor_kalibrasi` dipertahankan sebagai
+            # alias supaya pembaca lama tidak pecah.
             hasil[split] = {
                 **_metrik_biner(y, p, float(bundel["risk_cutoffs"]["q80"])),
-                "skor": p, "skor_kalibrasi": pk, "y": y,
+                "skor": p, "skor_kalibrasi": p, "y": y,
             }
         oot = hasil.get("uji_oot")
         if oot is not None:

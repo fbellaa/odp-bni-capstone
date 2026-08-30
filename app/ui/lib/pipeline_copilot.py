@@ -27,6 +27,8 @@ import streamlit as st
 
 from lib import copilot_lokal as ck
 from lib import dummy_data, mock_engine, model_nyata as mn
+from lib import parameter_kebijakan as pk
+from lib import risiko_jaringan as rj
 
 # Jenis dokumen yang diminta pada pengajuan komersial.
 JENIS_DOKUMEN = {
@@ -35,6 +37,12 @@ JENIS_DOKUMEN = {
     "rekening_koran": "Rekening koran perusahaan",
     "pengajuan": "Form pengajuan (nota analisa kredit)",
 }
+
+# Dua di antaranya wajib: laporan keuangan mengisi rasio yang dipakai model PD,
+# nota analisa mengisi struktur fasilitas yang diminta. Tanpa keduanya yang
+# keluar adalah skor atas asumsi segmen - tampilannya sama persis dengan skor
+# atas berkas nasabah, dan itu yang membuatnya menyesatkan.
+DOKUMEN_WAJIB = ("laporan_keuangan", "pengajuan")
 
 # Hijau untuk angka yang bisa dibuka ulang di berkas nasabah, biru untuk isian
 # nota analisa bank, abu untuk yang diasumsikan sistem karena tidak tertulis.
@@ -1343,20 +1351,106 @@ def entitas_dari_dokumen(dokumen: HasilDokumen | None) -> tuple[dict, dict]:
     return entitas, asal
 
 
-def lengkapi_fitur_graf(entitas: dict, application_id: str) -> dict:
-    """Fitur yang datangnya dari lapisan graf dan riwayat, bukan dari berkas."""
+def lengkapi_fitur_graf(
+    entitas: dict,
+    application_id: str,
+    hasil_jaringan=None,
+    tanggal_telaah=None,
+) -> dict:
+    """Fitur yang datangnya dari lapisan graf dan riwayat, bukan dari berkas.
+
+    Nilai awalnya median portofolio dari `parameter_kebijakan.asumsi_portofolio()`,
+    bukan lagi konstanta yang ditulis tangan. Bila `hasil_jaringan` (lihat
+    `lib/risiko_jaringan.py`) membawa komponen hasil pencocokan afiliasi ke
+    `data/gold`, nilai nyata itulah yang menang.
+
+    Tiap fitur membawa asalnya pada `fitur["asal_fitur"]`: median portofolio,
+    turunan dokumen, atau pengukuran atas afiliasi tercocok. Tanpa itu, angka
+    yang diukur dan angka yang dipinjam dari portofolio tampil sama saja di
+    layar - dan hanya salah satunya yang boleh dibela di depan komite.
+    """
+    rujukan, asal_rujukan = pk.asumsi_portofolio()
     fitur = dict(entitas)
-    fitur.update(
-        utang_berbunga_eksisting=entitas.get(
-            "total_liabilitas_rp", entitas["plafon"] * 0.25) * 0.5,
-        konversi_ebitda_kas=0.62 if entitas.get("indikasi_konsentrasi_pembeli") else 0.76,
-        utilisasi_plafon=0.72,
-        buyer_concentration_hhi=0.71 if entitas.get("indikasi_konsentrasi_pembeli") else 0.32,
-        supplier_concentration_hhi=0.66 if entitas.get("indikasi_konsentrasi_pemasok") else 0.30,
-        neighbor_default_rate_1hop=0.09 if entitas.get("indikasi_rangkap_jabatan") else 0.035,
-        group_exposure_share=min(0.28 + 0.11 * entitas.get("jumlah_entitas_grup", 1), 0.95),
-        tenure_nasabah_thn=max(entitas.get("umur_usaha_thn", 10.0) - 6.0, 0.0),
+    asal_fitur: dict[str, str] = {}
+
+    # Utang berbunga eksisting: porsi dari total liabilitas yang benar-benar
+    # berbunga, bukan setengahnya. Taksiran lama 0,50 membuat ICR dan DSCR
+    # pemohon terbaca lebih sehat daripada portofolio yang melahirkannya.
+    liabilitas = entitas.get("total_liabilitas_rp")
+    if liabilitas:
+        fitur["utang_berbunga_eksisting"] = float(liabilitas) * rujukan["porsi_utang_berbunga"]
+        asal_fitur["utang_berbunga_eksisting"] = (
+            f"total liabilitas dokumen x {rujukan['porsi_utang_berbunga']:.3f} "
+            "(porsi berbunga, median portofolio)")
+    else:
+        fitur["utang_berbunga_eksisting"] = float(entitas["plafon"]) * 0.25
+        asal_fitur["utang_berbunga_eksisting"] = "taksiran seperempat plafon (liabilitas tak terbaca)"
+
+    for kunci in ("konversi_ebitda_kas", "utilisasi_plafon", "buyer_concentration_hhi",
+                  "supplier_concentration_hhi", "neighbor_default_rate_1hop",
+                  "group_exposure_share"):
+        fitur[kunci] = rujukan[kunci]
+        asal_fitur[kunci] = asal_rujukan[kunci]
+
+    # Konversi EBITDA ke kas bisa dihitung langsung bila laporan memuat arus kas
+    # operasi - angka pemohon sendiri, bukan median siapa-siapa.
+    arus = entitas.get("arus_kas_operasi_rp")
+    ebitda = entitas.get("ebitda_rp")
+    if arus and ebitda and float(ebitda) > 0:
+        fitur["konversi_ebitda_kas"] = float(min(max(float(arus) / float(ebitda), 0.05), 2.0))
+        asal_fitur["konversi_ebitda_kas"] = "dokumen: arus kas operasi / EBITDA"
+
+    # Lama menjadi nasabah tidak ada sumbernya di mana pun - ia turunan umur
+    # usaha, dan disebut turunan supaya tidak terbaca sebagai riwayat relasi.
+    fitur["tenure_nasabah_thn"] = max(float(entitas.get("umur_usaha_thn", 10.0)) - 6.0, 0.0)
+    asal_fitur["tenure_nasabah_thn"] = "turunan umur usaha, bukan riwayat relasi"
+    fitur["asal_fitur"] = asal_fitur
+
+    if hasil_jaringan is None or not getattr(hasil_jaringan, "tersedia", False):
+        # Tanpa pencocokan afiliasi tidak ada fitur graf yang bisa diukur.
+        # Skor jaringan sengaja TIDAK diisi angka apa pun di sini.
+        fitur["asal_fitur_graf"] = "median_portofolio"
+        return fitur
+
+    nyata = {k.kunci: k for k in hasil_jaringan.komponen}
+    # Komponen indikator menyimpan nilai ternormalisasi; yang dibutuhkan model
+    # adalah besaran aslinya, jadi hanya yang skalanya memang 0..1 yang dipakai
+    # langsung. Sisanya dibiarkan pada asumsi daripada dikonversi balik.
+    if "neighbor_default_rate_1hop" in nyata:
+        fitur["neighbor_default_rate_1hop"] = (
+            nyata["neighbor_default_rate_1hop"].nilai * rj.JENUH_DEFAULT_RATE
+        )
+        asal_fitur["neighbor_default_rate_1hop"] = "feat_graf_pit atas afiliasi tercocok"
+    if "group_exposure_share" in nyata:
+        fitur["group_exposure_share"] = nyata["group_exposure_share"].nilai
+        asal_fitur["group_exposure_share"] = "feat_graf_pit atas afiliasi tercocok"
+    if hasil_jaringan.skor is not None:
+        fitur["network_risk_score"] = hasil_jaringan.skor
+
+    # Eksposur BMPK grup dalam rupiah, bukan porsi. Batas kredit dihitung atas
+    # sisa ruang grup, jadi angkanya harus datang dari grup yang benar-benar
+    # ditunjuk cocokan - bukan dari porsi asumsi dikali batas rata-rata.
+    cif = tuple(hasil_jaringan.cif_tercocok)
+    utang = pk.utang_berbunga(cif)
+    if utang:
+        fitur["utang_berbunga_eksisting"] = utang["nilai"]
+        asal_fitur["utang_berbunga_eksisting"] = (
+            f"{utang['sumber']} atas {utang['jumlah_fasilitas']} fasilitas tercocok")
+
+    bmpk = pk.eksposur_grup(
+        cif,
+        tanggal_telaah or hasil_jaringan.snapshot or pd.Timestamp.today(),
     )
-    jaringan = dummy_data.score_network_risk(application_id)
-    fitur["network_risk_score"] = jaringan["skor"]
+    if bmpk:
+        fitur["eksposur_grup_rp"] = bmpk["eksposur_rp"]
+        fitur["batas_bmpk_rp"] = bmpk["batas_bmpk_rp"]
+        fitur["group_exposure_share"] = bmpk["share"]
+        fitur["bmpk_grup_id"] = bmpk["grup_id"]
+        fitur["bmpk_snapshot"] = bmpk["snapshot"]
+        fitur["asal_bmpk"] = bmpk["sumber"]
+        fitur["catatan_bmpk"] = bmpk["catatan"]
+    else:
+        fitur["asal_bmpk"] = "tidak ada grup debitur yang bisa ditunjuk"
+
+    fitur["asal_fitur_graf"] = "data_gold"
     return fitur

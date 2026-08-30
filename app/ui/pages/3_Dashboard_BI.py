@@ -1,4 +1,4 @@
-"""Halaman 6 — Dashboard BI.
+"""Halaman 4 — Dashboard BI.
 
 Metabase disematkan sebagai iframe untuk lapisan eksekutif (pola 2 pada
 proposal 9.1). Selama Metabase belum dijalankan, halaman ini menampilkan
@@ -24,7 +24,7 @@ setup_halaman("Dashboard BI")
 sidebar_status()
 
 hero(
-    "05",
+    "04",
     "Dashboard BI",
     "Lapisan eksekutif dan operasional portofolio komersial disajikan melalui Metabase di "
     "belakang reverse proxy. Metabase masih dalam pembangunan, jadi halaman ini menahan "

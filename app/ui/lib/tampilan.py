@@ -299,16 +299,21 @@ def badge_keputusan(keputusan: str) -> str:
 
 
 def badge_grade(grade: str) -> str:
-    return badge(f"Rating {grade}", mock_engine.WARNA_GRADE.get(grade, "#666666"))
+    """Lencana pita risiko. Nama fungsi dipertahankan dari versi rating huruf."""
+    return badge(grade, mock_engine.WARNA_PITA.get(grade, "#666666"))
 
 
 def kartu_hasil(hasil: mock_engine.HasilSkor, plafon_diminta: float) -> None:
     """Baris metrik inti keputusan pada segmen komersial."""
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Probability of default", persen(hasil.pd), help="PD terkalibrasi 12 bulan ke depan")
-    k2.metric("Rating internal", hasil.grade,
-              help="Varian scorecard WOE menjadi rating yang mudah diaudit komite")
-    k3.metric("Expected loss", miliar(hasil.expected_loss, 2), help="PD × LGD × EAD")
+    k1.metric("Skor default 12 bulan", persen(hasil.pd),
+              help="Skor mentah model PD. Artefak ini tidak terkalibrasi, jadi angkanya "
+                   "peringkat risiko - yang dibaca komite adalah pitanya.")
+    k2.metric("Pita risiko", hasil.grade,
+              help="Pita risiko model PD terhadap sebaran skor portofolio pengembangan")
+    k3.metric("Expected loss (indikatif)", miliar(hasil.expected_loss, 2),
+              help="Skor × LGD × EAD. Indikatif saja: skor PD tidak terkalibrasi, jadi "
+                   "hasilnya tidak boleh dibaca sebagai rupiah kerugian yang diharapkan.")
     k4.metric(
         "Usulan limit grup",
         miliar(hasil.limit_usulan, 0),
@@ -317,7 +322,8 @@ def kartu_hasil(hasil: mock_engine.HasilSkor, plafon_diminta: float) -> None:
         delta_color="inverse",
     )
     k5.metric("Usulan pricing", persen(hasil.pricing),
-              help="Biaya dana + operasional + margin target + expected loss")
+              help="Suku bunga dasar pita, dikalibrasi ke pricing yang benar-benar pernah "
+                   "ditagih pada pita tersebut (fact_pengajuan.pricing_bps).")
 
 
 def kartu_rasio(hasil: mock_engine.HasilSkor) -> None:
@@ -343,8 +349,10 @@ def kartu_rasio(hasil: mock_engine.HasilSkor) -> None:
 def panel_gerbang(gerbang: list[dict], ringkas: bool = False) -> None:
     """Gerbang kepatuhan pada alur keputusan (proposal 5.3).
 
-    Setiap butir selalu disertai pasal sebagai dasar; tanpa kutipan, tidak ada
-    jawaban.
+    Tiap butir menampilkan dua hal yang berbeda dan tidak boleh dilebur: aturan
+    internal yang benar-benar diuji kode, dan pasal korpus yang mendasarinya
+    bila memang ada. Aspek tanpa padanan korpus mengatakannya terang-terangan —
+    sebelumnya kolom itu diisi nomor pasal karangan supaya tidak kosong.
     """
     for a in gerbang:
         warna = WARNA_STATUS.get(a["status"], "#666666")
@@ -353,12 +361,19 @@ def panel_gerbang(gerbang: list[dict], ringkas: bool = False) -> None:
             f'<span class="aspek" style="color:{warna}">{a["aspek"]} · {a["status"]}</span><br>'
             f'<b>{a["temuan"]}</b><br>'
         )
-        if not ringkas:
-            isi += f'<span class="tipis">{a["kutipan"]}</span><br>'
-        isi += (
-            f'<span class="pasal">{a["pasal"]}</span><br>'
-            f'<span class="tipis">Tindakan: {a["tindakan"]}</span></div>'
-        )
+        if not ringkas and a.get("aturan"):
+            isi += f'<span class="tipis">Aturan: {a["aturan"]}</span><br>'
+        if a.get("sumber") == "korpus" and a.get("pasal"):
+            isi += f'<span class="pasal">{a["pasal"]}</span><br>'
+            if not ringkas and a.get("kutipan"):
+                isi += f'<span class="tipis">{a["kutipan"]}</span><br>'
+        elif a.get("peraturan_luar"):
+            isi += ('<span class="tipis">Kebijakan internal · diatur '
+                    f'{a["peraturan_luar"]}, belum ada di korpus.</span><br>')
+        else:
+            isi += ('<span class="tipis">Kebijakan internal — tidak ada padanan '
+                    'pada korpus kebijakan.</span><br>')
+        isi += f'<span class="tipis">Tindakan: {a["tindakan"]}</span></div>'
         st.markdown(isi, unsafe_allow_html=True)
 
 

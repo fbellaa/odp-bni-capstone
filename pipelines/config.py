@@ -105,6 +105,14 @@ class Settings:
     saldo_min_rp: float = 10e9
     saldo_max_rp: float = 50e9
 
+    # Ambang kewajaran neraca untuk segmen komersial: total aset tidak boleh
+    # lebih dari 10x penjualan setahun. Penskalaan rupiah memakai penjualan
+    # sebagai jangkar, sehingga perusahaan padat aset di panel US muncul dengan
+    # neraca yang tidak masuk akal untuk debitur beromzet puluhan miliar
+    # (ekuitas ratusan triliun). Ambang ini dipakai MENYARING ABT, bukan memilih
+    # panel - lihat `exports/abt.saring_segmen_komersial` untuk alasannya.
+    aset_thd_penjualan_maks: float = 10.0
+
     # -------------------------------- injeksi afiliasi tersembunyi (langkah 7)
     # Komposisi klaster: 2 debitur yang benar-benar gagal bayar + 4 yang tidak.
     # Keanggotaan klaster otomatis berkorelasi dengan label - dilusi 2:4 menjaga

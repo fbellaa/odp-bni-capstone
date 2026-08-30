@@ -8,7 +8,7 @@ copilot/
 ├─ konfigurasi.py   profil model, anggaran memori, path index
 ├─ llm/             klien Ollama (chat, streaming, JSON terstruktur, embedding)
 ├─ dokumen/         PDF -> struktur -> argumen telusuri_afiliasi()
-├─ rag/             potong per pasal -> embed -> cari, dengan sitasi
+├─ rag/             potong per pasal -> embed -> cari hibrida, dengan sitasi
 ├─ alat/            12 tool perhitungan deterministik + definisi function calling
 ├─ agen/            putaran tool calling
 ├─ memo.py          penyusunan draft credit memo
@@ -32,7 +32,8 @@ BerkasPengajuan (rekening koran, lapkeu, akta)
    ├─────────────► telusuri_afiliasi()          pipelines/graph/resolusi.py
    │                 alamat, pengurus, rekening lawan
    ├─────────────► RAG kebijakan                copilot/rag/
-   │                 potongan per pasal + sitasi halaman
+   │                 potongan per pasal, peringkat kosinus + leksikal
+   │                 + rujukan pasal, sitasi sampai nomor halaman
    ▼
 konteks_pengajuan()  — fakta datar, satu angka per baris
    │  LLM peran `agen` (Qwen), function calling
@@ -68,11 +69,23 @@ dipakai.
 
 | Profil | ekstraksi & chat | agen | embedding | Perkiraan |
 |---|---|---|---|---|
-| `hemat` (bawaan) | `qwen2.5:3b-instruct` | `qwen2.5:3b-instruct` | `nomic-embed-text` | ~2,3 GB |
+| `terpadu` (bawaan) | `qwen2.5:7b-instruct` | `qwen2.5:7b-instruct` | `nomic-embed-text` | ~5 GB |
+| `hemat` | `qwen2.5:3b-instruct` | `qwen2.5:3b-instruct` | `nomic-embed-text` | ~2,3 GB |
 | `seimbang` | SahabatAI (lihat di bawah) | `qwen2.5:7b-instruct` | `nomic-embed-text` | ~8 GB |
 
-`hemat` jadi bawaan supaya repo ini bisa langsung dijalankan orang lain tanpa
-mencari berkas GGUF dulu, dan tetap muat di CPU-only.
+`terpadu` jadi bawaan sejak lapisan agentic AI di `ml/agentic_ai/` masuk repo.
+Lapisan itu memakai `qwen2.5:7b-instruct` untuk agent, narrator, dan
+extractor-nya; menyamakan peran copilot ke bobot yang sama berarti Ollama
+memuat satu Qwen, bukan dua generasi berdampingan. Di luar RAG kebijakan,
+pekerjaan LLM memang sudah ditangani lapisan agentic itu — yang benar-benar
+khas copilot tinggal embedding korpus kebijakan dan sintesis jawabannya.
+
+`hemat` tetap ada sebagai jalur mundur bila 7B tidak muat, misalnya sesi tanpa
+GPU sama sekali:
+
+```bash
+export COPILOT_PROFIL=hemat
+```
 
 ### Tentang tag SahabatAI
 
@@ -147,6 +160,34 @@ menolak jalan dan meminta index dibangun ulang — vektor dari dua model berbeda
 tidak sebanding, dan membiarkannya lewat menghasilkan sitasi yang terlihat wajar
 tapi salah pasal.
 
+**Peringkatnya hibrida, bukan kosinus murni.** Tiga lapis, urut dari yang paling
+menentukan:
+
+| Lapis | Berlaku saat | Perilaku |
+|---|---|---|
+| Rujukan pasal | kueri menyebut "Pasal 12" | seluruh potongan pasal itu diangkat ke atas, urut dokumen, walau vektornya jauh |
+| Leksikal (IDF + saturasi BM25) | selalu, bobot `COPILOT_BOBOT_LEKSIKAL` (0,35) | kecocokan istilah persis peraturan |
+| Kosinus | selalu, sisa bobot (0,65) | kemiripan makna |
+
+Alasan lapis pertama: nomor pasal adalah kunci pencarian yang tepat, dan
+metadatanya sudah menempel di tiap potongan sejak pemotongan — membiarkannya
+diadu lewat kemiripan vektor membuang informasi yang sudah dipunya. Pasal yang
+diminta dibawa **utuh** meski jumlah potongannya melebihi `top_k`; mengutip
+separuh pasal tanpa memberi tahu lebih buruk daripada konteks yang sedikit lebih
+panjang. Kalau nomornya tidak ada di korpus, peringkat kembali ke skor biasa dan
+`jawab()` menambahkan catatan eksplisit ke prompt supaya model menyatakan pasal
+itu tidak ada alih-alih menggantinya dengan pasal termirip.
+
+Alasan lapis kedua: pada korpus peraturan, "hapus buku", "CKPN", dan "agunan
+yang diambil alih" adalah istilah berdefinisi, bukan parafrase — dan analis
+kredit mengetik istilah persisnya. Embedding kecil menilai kemiripan makna dan
+kerap menaruh kalimat bertema serupa di atas pasal yang memakai istilahnya.
+Skor leksikal dinormalisasi ke [0,1] supaya sebanding dengan kosinus; setel
+`COPILOT_BOBOT_LEKSIKAL=0` untuk kembali ke dense murni.
+
+Ketiganya bekerja di atas index yang sama dan tidak mengubah bentuknya, jadi
+menggeser bobot tidak menuntut pembangunan ulang `data/index/`.
+
 ### 4. Uji asap
 
 ```bash
@@ -164,10 +205,10 @@ memanggil tool, dan tanpa uji ini kelihatan seperti berhasil.
 
 ```bash
 pip install -r app/ui/requirements.txt
-streamlit run app/ui/app.py
+streamlit run app/ui/Copilot_Pengajuan.py
 ```
 
-Buka halaman **7 · Copilot lokal**.
+Halaman copilot adalah halaman pertama yang terbuka.
 
 ---
 

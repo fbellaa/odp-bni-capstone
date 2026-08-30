@@ -1,0 +1,495 @@
+<title>ERD Gold Banking Copilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+  :root {
+    --kertas: #EEF2F6;
+    --permukaan: #FFFFFF;
+    --tinta: #12212B;
+    --redup: #55697A;
+    --garis: #C6D2DC;
+    --garis-kuat: #8DA2B1;
+    --a: #0A5C6E;  --a-tint: #E2EFF2;
+    --b: #55488A;  --b-tint: #E9E6F4;
+    --c: #8F5518;  --c-tint: #F5EBDD;
+    --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --kertas: #0E151B;
+      --permukaan: #172029;
+      --tinta: #E3EBF1;
+      --redup: #90A4B2;
+      --garis: #2B3A46;
+      --garis-kuat: #5D7383;
+      --a: #4EAFC1;  --a-tint: #102A31;
+      --b: #A392D6;  --b-tint: #201D31;
+      --c: #D28C43;  --c-tint: #2B2014;
+    }
+  }
+  :root[data-theme="dark"] {
+    --kertas: #0E151B;
+    --permukaan: #172029;
+    --tinta: #E3EBF1;
+    --redup: #90A4B2;
+    --garis: #2B3A46;
+    --garis-kuat: #5D7383;
+    --a: #4EAFC1;  --a-tint: #102A31;
+    --b: #A392D6;  --b-tint: #201D31;
+    --c: #D28C43;  --c-tint: #2B2014;
+  }
+
+  body {
+    margin: 0;
+    padding: 0 24px 96px;
+    background: var(--kertas);
+    color: var(--tinta);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .bungkus { max-width: 1180px; margin: 0 auto; }
+
+  /* ---------------------------------------------------------------- kepala */
+  header { padding: 56px 0 28px; border-bottom: 1px solid var(--garis); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(30px, 4.2vw, 46px);
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .deck { margin: 0; max-width: 62ch; color: var(--redup); font-size: 16px; }
+  .angka {
+    display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 24px; padding: 0; list-style: none;
+  }
+  .angka li {
+    font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+    background: var(--permukaan); border: 1px solid var(--garis);
+    padding: 5px 10px; border-radius: 2px; color: var(--redup);
+  }
+  .angka b { color: var(--tinta); font-weight: 600; }
+
+  /* --------------------------------------------------------------- seksi */
+  section { padding-top: 52px; }
+  .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--aksen, var(--redup)); margin: 0 0 8px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--garis); }
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: 26px; line-height: 1.2;
+    margin: 0 0 10px; letter-spacing: -0.01em;
+  }
+  h3 {
+    font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--redup); margin: 36px 0 12px;
+  }
+  section > p { max-width: 68ch; margin: 0 0 8px; }
+  #a { --aksen: var(--a); }
+  #b { --aksen: var(--b); }
+  #abt, #tata { --aksen: var(--c); }
+
+  /* --------------------------------------------------------------- rajah */
+  figure { margin: 28px 0 0; }
+  .gulir {
+    overflow-x: auto; background: var(--permukaan);
+    border: 1px solid var(--garis); border-radius: 3px; padding: 18px;
+  }
+  .rajah { display: block; width: 100%; min-width: 720px; height: auto; color: var(--garis-kuat); }
+  .hub { fill: none; stroke: currentColor; stroke-width: 1.2; }
+  .t-nama { font-family: var(--mono); font-size: 13.5px; font-weight: 600; fill: var(--tinta); }
+  .t-sub { font-family: var(--sans); font-size: 11px; fill: var(--redup); }
+  .t-jml { font-family: var(--mono); font-size: 11px; fill: var(--redup); }
+  .t-rel { font-family: var(--sans); font-size: 11px; fill: var(--redup); }
+  .t-band {
+    font-family: var(--sans); font-size: 10px; fill: var(--redup);
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  figcaption {
+    margin-top: 12px; font-size: 13.5px; color: var(--redup); max-width: 78ch; line-height: 1.55;
+  }
+  figcaption b { color: var(--tinta); font-weight: 600; }
+
+  /* --------------------------------------------------------------- tabel */
+  .tabel-gulir { overflow-x: auto; margin-top: 14px; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 560px;
+    background: var(--permukaan); border: 1px solid var(--garis);
+  }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--garis); vertical-align: top; }
+  thead th {
+    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--redup); font-weight: 600; background: var(--kertas);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.pakai { text-align: center; font-family: var(--mono); color: var(--c); }
+  code, .kode {
+    font-family: var(--mono); font-size: 0.92em;
+    background: var(--kertas); border: 1px solid var(--garis);
+    padding: 1px 5px; border-radius: 2px; white-space: nowrap;
+  }
+  td code { background: none; border: 0; padding: 0; }
+
+  /* -------------------------------------------------------------- catatan */
+  .catatan { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 12px; }
+  .catatan li {
+    background: var(--permukaan); border: 1px solid var(--garis);
+    border-left: 3px solid var(--aksen, var(--garis-kuat));
+    padding: 12px 16px; border-radius: 2px; font-size: 14px; max-width: 76ch;
+  }
+  .catatan b { font-weight: 600; }
+  footer {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--garis);
+    color: var(--redup); font-size: 13px;
+  }
+  @media (max-width: 640px) {
+    body { padding: 0 16px 64px; font-size: 14.5px; }
+    header { padding-top: 36px; }
+  }
+</style>
+
+<div class="bungkus">
+
+<header>
+  <h1>ERD gold layer</h1>
+  <p class="deck">Skema bintang <em>Banking Copilot</em> apa adanya &#8212; dibaca langsung dari 33 berkas parquet di <code>data/gold</code>, bukan dari rancangan. Dua ERD yang sengaja dipisah fisik, satu paket serah terima, dan tiga tabel tata kelola.</p>
+  <ul class="angka">
+    <li><b>33</b> tabel parquet</li>
+    <li><b>6.842</b> baris dim_debitur (6.000 versi kini)</li>
+    <li><b>1.390</b> grup usaha</li>
+    <li>seed <b>42</b></li>
+    <li><b>81/81</b> uji kualitas lolos</li>
+    <li>build <b>28 Agu 2026</b></li>
+  </ul>
+</header>
+
+<section id="baca">
+  <p class="eyebrow">Cara membacanya</p>
+  <h2>Empat hal yang perlu diketahui sebelum menelusuri panah</h2>
+  <ul class="catatan">
+    <li><b>Kotak berlatar warna adalah dimensi, kotak putih adalah fakta.</b> Baris kedua tiap kotak menyebut butir granularitasnya &#8212; itu yang menentukan apakah sebuah join menggandakan baris.</li>
+    <li><b>Cakar tiga cabang menandai sisi &#8220;banyak&#8221;.</b> Satu debitur punya banyak pengajuan; satu fasilitas punya banyak baris kolektibilitas.</li>
+    <li><b>6.000 debitur itu ukuran sampel, bukan sisa penyaringan.</b> Kolam perusahaan layak &#8212; panel 3 tahun berturut-turut, aset dan penjualan positif &#8212; berisi 6.251, lalu diambil 6.000. Angkanya bulat karena diminta bulat, jadi <code>dim_debitur</code> memang tepat 6.000 versi kini. Penyaringan kewajaran neraca terjadi belakangan, di lapisan ABT &#8212; lihat catatan pada bagian serah terima.</li>
+    <li><b><code>cif_sk</code> adalah kunci bisnis debitur, bukan kunci utamanya.</b> <code>dim_debitur</code> berversi SCD-2, jadi kunci utamanya <code>debitur_sk</code> dan seluruh tabel fakta menunjuk <code>cif_sk</code>. Saring <code>is_current</code> sebelum join kalau tidak ingin baris berganda.</li>
+  </ul>
+</section>
+
+<section id="a">
+  <p class="eyebrow">ERD A</p>
+  <h2>Inti kredit</h2>
+  <p>Sebelas tabel yang menjawab pertanyaan bisnis: siapa debiturnya, apa yang diajukan, apa yang dicairkan, dan bagaimana nasibnya tiap bulan. Seluruh jalur menuju <code>fact_fasilitas</code>, dan dari sana ke fakta bulanan.</p>
+
+  <figure>
+  <div class="gulir">
+    <svg class="rajah" viewBox="0 0 1180 460" role="img" aria-label="ERD inti kredit: dim_debitur dan dim_grup_usaha menurunkan fact_pengajuan, pengajuan yang disetujui menjadi fact_fasilitas, dan fasilitas menjadi induk fact_agunan, fact_covenant, fact_kolektibilitas, serta fact_default">
+      <defs><marker id="kaki-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" orient="auto"><path d="M0,5 L9,1 M0,5 L9,5 M0,5 L9,9" fill="none" stroke="currentColor" stroke-width="1.2"/></marker><marker id="ah-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><polygon points="0,1 9,5 0,9" fill="currentColor"/></marker></defs>
+      <rect x="30" y="30" width="235" height="64" rx="3" fill="var(--a-tint)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="55">dim_grup_usaha</text>
+      <text class="t-sub" x="44" y="75">grup_id</text>
+      <text class="t-jml" x="251" y="75" text-anchor="end">1.390</text>
+      <rect x="30" y="170" width="235" height="64" rx="3" fill="var(--a-tint)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="195">dim_debitur</text>
+      <text class="t-sub" x="44" y="215">debitur_sk &#183; SCD-2</text>
+      <text class="t-jml" x="251" y="215" text-anchor="end">6.842</text>
+      <rect x="30" y="320" width="235" height="64" rx="3" fill="var(--a-tint)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="345">dim_produk_fasilitas</text>
+      <text class="t-sub" x="44" y="365">produk_id</text>
+      <text class="t-jml" x="251" y="365" text-anchor="end">5</text>
+      <rect x="330" y="30" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="344" y="55">fact_eksposur_grup</text>
+      <text class="t-sub" x="344" y="75">grup + bulan</text>
+      <text class="t-jml" x="551" y="75" text-anchor="end">55.525</text>
+      <rect x="330" y="130" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="344" y="155">fact_laporan_keuangan</text>
+      <text class="t-sub" x="344" y="175">lk_id &#183; 3 tahun buku</text>
+      <text class="t-jml" x="551" y="175" text-anchor="end">18.000</text>
+      <rect x="330" y="240" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="344" y="265">fact_pengajuan</text>
+      <text class="t-sub" x="344" y="285">application_id</text>
+      <text class="t-jml" x="551" y="285" text-anchor="end">6.000</text>
+      <rect x="630" y="240" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="644" y="265">fact_fasilitas</text>
+      <text class="t-sub" x="644" y="285">facility_id</text>
+      <text class="t-jml" x="851" y="285" text-anchor="end">4.400</text>
+      <rect x="915" y="60" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="929" y="85">fact_agunan</text>
+      <text class="t-sub" x="929" y="105">agunan_id</text>
+      <text class="t-jml" x="1136" y="105" text-anchor="end">8.863</text>
+      <rect x="915" y="160" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="929" y="185">fact_covenant</text>
+      <text class="t-sub" x="929" y="205">facility + bulan + jenis</text>
+      <text class="t-jml" x="1136" y="205" text-anchor="end">388.716</text>
+      <rect x="915" y="260" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="929" y="285">fact_kolektibilitas</text>
+      <text class="t-sub" x="929" y="305">facility + bulan</text>
+      <text class="t-jml" x="1136" y="305" text-anchor="end">129.572</text>
+      <rect x="915" y="360" width="235" height="64" rx="3" fill="var(--permukaan)" stroke="var(--a)" stroke-width="1.3"/>
+      <text class="t-nama" x="929" y="385">fact_default</text>
+      <text class="t-sub" x="929" y="405">facility_id</text>
+      <text class="t-jml" x="1136" y="405" text-anchor="end">214</text>
+      <path class="hub" d="M265,62 H330" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="297" y="52" text-anchor="middle">grup_id</text>
+      <path class="hub" d="M147,94 V170" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="157" y="138" text-anchor="start">grup_id</text>
+      <path class="hub" d="M265,190 H298 V162 H330" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="326" y="150" text-anchor="end">cif_sk</text>
+      <path class="hub" d="M265,215 H298 V272 H330" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="326" y="264" text-anchor="end">cif_sk</text>
+      <path class="hub" d="M265,352 H298 V288 H330" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="326" y="306" text-anchor="end">produk_id</text>
+      <path class="hub" d="M565,272 H630" marker-end="url(#kaki-a)"/>
+      <text class="t-rel" x="597" y="230" text-anchor="middle">application_id</text>
+      <text class="t-rel" x="597" y="330" text-anchor="middle">4.400 dari 6.000 disetujui</text>
+      <path class="hub" d="M865,272 H890 M890,92 V392"/>
+      <text class="t-rel" x="886" y="80" text-anchor="end">facility_id</text>
+      <path class="hub" d="M890,92 H915" marker-end="url(#kaki-a)"/>
+      <path class="hub" d="M890,192 H915" marker-end="url(#kaki-a)"/>
+      <path class="hub" d="M890,292 H915" marker-end="url(#kaki-a)"/>
+      <path class="hub" d="M890,392 H915" marker-end="url(#kaki-a)"/>
+    </svg>
+  </div>
+  <figcaption><b>ERD A &#183; inti kredit.</b> Rantainya satu arah: debitur mengajukan, sebagian pengajuan menjadi fasilitas, lalu seluruh fakta bulanan menggantung pada <code>facility_id</code>. Kotak berlatar warna adalah dimensi, kotak putih adalah fakta; cakar di ujung panah menandai sisi &#8220;banyak&#8221;.</figcaption>
+</figure>
+
+  <h3>Kunci dan granularitas</h3>
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th>Tabel</th><th>Kunci utama</th><th>Kunci asing</th><th>Satu baris = </th><th>Baris</th></tr></thead>
+    <tbody>
+      <tr><td><code>dim_debitur</code></td><td><code>debitur_sk</code></td><td><code>grup_id</code></td><td>satu versi debitur (SCD-2)</td><td class="num">6.842</td></tr>
+      <tr><td><code>dim_grup_usaha</code></td><td><code>grup_id</code></td><td>&#8212;</td><td>satu grup usaha</td><td class="num">1.390</td></tr>
+      <tr><td><code>dim_produk_fasilitas</code></td><td><code>produk_id</code></td><td>&#8212;</td><td>satu produk kredit</td><td class="num">5</td></tr>
+      <tr><td><code>fact_laporan_keuangan</code></td><td><code>lk_id</code></td><td><code>cif_sk</code></td><td>satu debitur &#215; satu tahun buku</td><td class="num">18.000</td></tr>
+      <tr><td><code>fact_pengajuan</code></td><td><code>application_id</code></td><td><code>cif_sk</code>, <code>produk_id</code></td><td>satu pengajuan kredit</td><td class="num">6.000</td></tr>
+      <tr><td><code>fact_fasilitas</code></td><td><code>facility_id</code></td><td><code>application_id</code>, <code>cif_sk</code>, <code>produk_id</code></td><td>satu fasilitas yang cair</td><td class="num">4.400</td></tr>
+      <tr><td><code>fact_agunan</code></td><td><code>agunan_id</code></td><td><code>facility_id</code></td><td>satu agunan</td><td class="num">8.863</td></tr>
+      <tr><td><code>fact_covenant</code></td><td><code>covenant_id</code></td><td><code>facility_id</code></td><td>fasilitas &#215; bulan &#215; jenis covenant</td><td class="num">388.716</td></tr>
+      <tr><td><code>fact_kolektibilitas</code></td><td><code>facility_id</code> + <code>snapshot_date</code></td><td><code>facility_id</code>, <code>cif_sk</code></td><td>fasilitas &#215; bulan</td><td class="num">129.572</td></tr>
+      <tr><td><code>fact_default</code></td><td><code>facility_id</code></td><td><code>facility_id</code>, <code>cif_sk</code></td><td>satu kejadian gagal bayar</td><td class="num">214</td></tr>
+      <tr><td><code>fact_eksposur_grup</code></td><td><code>grup_id</code> + <code>snapshot_date</code></td><td><code>grup_id</code></td><td>grup &#215; bulan, dibanding batas BMPK</td><td class="num">55.525</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="b">
+  <p class="eyebrow">ERD B</p>
+  <h2>Lapisan graf</h2>
+  <p>Empat belas tabel yang menjawab pertanyaan afiliasi: siapa memiliki siapa, siapa mengurus siapa, siapa sekantor, dan siapa bertransaksi dengan siapa. Dipisah fisik dari ERD A supaya uji ablasi bisa dilakukan dengan men-<em>drop</em> satu tabel utuh.</p>
+
+  <figure>
+  <div class="gulir">
+    <svg class="rajah" viewBox="0 0 1100 560" role="img" aria-label="Empat tabel dimensi menjadi gold_graph_nodes, empat tabel relasi menjadi gold_graph_edges yang menunjuk node_id">
+      <defs><marker id="kaki-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" orient="auto"><path d="M0,5 L9,1 M0,5 L9,5 M0,5 L9,9" fill="none" stroke="currentColor" stroke-width="1.2"/></marker><marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><polygon points="0,1 9,5 0,9" fill="currentColor"/></marker></defs>
+      <text class="t-band" x="30" y="24" text-anchor="start">sumber simpul</text>
+      <rect x="30" y="34" width="250" height="62" rx="3" fill="var(--b-tint)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="59">sl_peta_cif</text>
+      <text class="t-sub" x="44" y="79">silver &#183; 6.000 badan_hukum</text>
+      <text class="t-jml" x="266" y="79" text-anchor="end">6.000</text>
+      <rect x="30" y="108" width="250" height="62" rx="3" fill="var(--b-tint)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="133">dim_pihak</text>
+      <text class="t-sub" x="44" y="153">&#8594; 23.234 pihak</text>
+      <text class="t-jml" x="266" y="153" text-anchor="end">23.219</text>
+      <rect x="30" y="182" width="250" height="62" rx="3" fill="var(--b-tint)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="207">dim_alamat</text>
+      <text class="t-sub" x="44" y="227">&#8594; 1.561 alamat</text>
+      <text class="t-jml" x="266" y="227" text-anchor="end">1.561</text>
+      <rect x="30" y="256" width="250" height="62" rx="3" fill="var(--b-tint)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="281">dim_counterparty</text>
+      <text class="t-sub" x="44" y="301">&#8594; 7.936 counterparty</text>
+      <text class="t-jml" x="266" y="301" text-anchor="end">7.936</text>
+      <text class="t-band" x="420" y="24" text-anchor="start">graf</text>
+      <rect x="420" y="110" width="290" height="76" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="434" y="135">gold_graph_nodes</text>
+      <text class="t-sub" x="434" y="155">node_id &#183; node_type &#183; ref_id</text>
+      <text class="t-jml" x="696" y="155" text-anchor="end">38.731</text>
+      <path class="hub" d="M280,65 H350 M280,139 H350 M280,213 H350 M280,287 H350 M350,65 V287"/>
+      <path class="hub" d="M350,148 H420" marker-end="url(#kaki-b)"/>
+      <text class="t-rel" x="356" y="106" text-anchor="start">node_id</text>
+      <text class="t-band" x="420" y="240" text-anchor="start">sumber relasi</text>
+      <rect x="420" y="252" width="290" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="434" y="277">fact_kepemilikan</text>
+      <text class="t-sub" x="434" y="297">memiliki</text>
+      <text class="t-jml" x="696" y="297" text-anchor="end">54.153</text>
+      <rect x="420" y="326" width="290" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="434" y="351">fact_kepengurusan</text>
+      <text class="t-sub" x="434" y="371">menjabat_di</text>
+      <text class="t-jml" x="696" y="371" text-anchor="end">43.039</text>
+      <rect x="420" y="400" width="290" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="434" y="425">fact_alamat_debitur</text>
+      <text class="t-sub" x="434" y="445">beralamat_di</text>
+      <text class="t-jml" x="696" y="445" text-anchor="end">5.318</text>
+      <rect x="420" y="474" width="290" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="434" y="499">fact_transfer_giro</text>
+      <text class="t-sub" x="434" y="519">memasok &#183; via bridge_rekening</text>
+      <text class="t-jml" x="696" y="519" text-anchor="end">297.553</text>
+      <rect x="780" y="300" width="290" height="76" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="794" y="325">gold_graph_edges</text>
+      <text class="t-sub" x="794" y="345">rel_type &#183; bobot &#183; valid_from/to</text>
+      <text class="t-jml" x="1056" y="345" text-anchor="end">93.506</text>
+      <path class="hub" d="M710,283 H745 M710,357 H745 M710,431 H745 M710,505 H745 M745,283 V505"/>
+      <path class="hub" d="M745,338 H780" marker-end="url(#kaki-b)"/>
+      <text class="t-rel" x="751" y="273" text-anchor="start">rel_type</text>
+      <path class="hub" d="M565,186 V216 H925 V300" marker-end="url(#ah-b)"/>
+      <text class="t-rel" x="745" y="208" text-anchor="middle">src_node_id &#183; dst_node_id</text>
+    </svg>
+  </div>
+  <figcaption><b>ERD B1 &#183; perakitan graf.</b> Empat dimensi menjadi simpul, empat tabel relasi menjadi sisi. Perhatikan kotak pertama: simpul badan hukum lahir dari <code>sl_peta_cif</code> di lapisan <em>silver</em>, bukan dari <code>dim_debitur</code>. Keduanya saudara dari peta CIF yang sama &#8212; itulah sebabnya graf berisi 6.000 simpul sementara <code>dim_debitur</code> berisi 6.842 baris: peta CIF lahir sebelum SCD-2 ada, jadi tidak ada versi yang perlu dibuang. Simpul <code>pihak</code> justru 15 lebih banyak dari <code>dim_pihak</code>: itu pihak nominee bentukan injeksi afiliasi, sengaja dibuat tak terbedakan dari pengurus ICIJ lain. Tiap sisi membawa <code>valid_from</code>/<code>valid_to</code> &#8212; itulah yang membuat snapshot bulanan mungkin.</figcaption>
+</figure>
+
+  <h3>Isi simpul dan sisi</h3>
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th><code>node_type</code></th><th>Baris</th><th><code>rel_type</code></th><th>Baris</th><th>Sumber</th></tr></thead>
+    <tbody>
+      <tr><td>pihak <span style="color:var(--redup)">(15 nominee)</span></td><td class="num">23.234</td><td><code>menjabat_di</code></td><td class="num">43.159</td><td>ICIJ</td></tr>
+      <tr><td>counterparty</td><td class="num">7.936</td><td><code>memasok</code></td><td class="num">20.430</td><td>AML</td></tr>
+      <tr><td>badan_hukum</td><td class="num">6.000</td><td><code>memiliki</code></td><td class="num">18.845</td><td>ICIJ</td></tr>
+      <tr><td>alamat</td><td class="num">1.561</td><td><code>berbagi_atribut</code></td><td class="num">5.754</td><td>ICIJ (turunan)</td></tr>
+      <tr><td>&#8212;</td><td class="num"></td><td><code>beralamat_di</code></td><td class="num">5.318</td><td>ICIJ</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="catatan">
+    <li><b>Simpul badan hukum tidak lahir dari <code>dim_debitur</code>.</b> Sumbernya <code>sl_peta_cif</code> di lapisan silver &#8212; peta CIF hasil penjahitan langkah 1&#8211;5, berisi tepat 6.000 baris, satu per <code>cif_sk</code>. <code>dim_debitur</code> dan <code>gold_graph_nodes</code> adalah dua <em>saudara</em> dari peta yang sama, bukan induk dan anak:
+      <div style="font-family:var(--mono);font-size:12.5px;line-height:1.7;margin-top:10px;color:var(--redup)">sl_peta_cif (silver, 6.000 cif_sk)<br>&nbsp;&nbsp;&#9500;&#9472;&#9472;&#9658; dim_debitur &nbsp;&#8594; 6.000 debitur, 842 diberi versi kedua = <b style="color:var(--tinta)">6.842 baris</b><br>&nbsp;&nbsp;&#9492;&#9472;&#9472;&#9658; gold_graph_nodes &#8594; <b style="color:var(--tinta)">6.000 simpul</b> badan_hukum</div>
+      Jadi selisihnya bukan hasil penyaringan versi: peta CIF memang lahir sebelum SCD-2 ada. Himpunan <code>cif_sk</code>-nya identik, sehingga join <code>gold_graph_nodes.ref_id = dim_debitur.cif_sk</code> tetap sah &#8212; saring <code>is_current</code> di sisi <code>dim_debitur</code>.</li>
+    <li><b>Simpul <code>pihak</code> justru 15 lebih banyak dari <code>dim_pihak</code>.</b> Lima belas simpul itu pihak nominee bentukan injeksi afiliasi &#8212; satu per klaster bermekanisme <code>nominee_bersama</code>, menyangga 120 sisi <code>menjabat_di</code>. Bentuknya sengaja dibuat sama persis dengan pengurus ICIJ lain supaya tidak bisa dibedakan dari struktur, dan konsekuensinya <code>ref_id</code> mereka tidak punya baris induk di <code>dim_pihak</code>: pencarian nama untuk simpul itu mengembalikan kosong.</li>
+  </ul>
+  <p style="margin-top:14px"><code>bridge_rekening</code> (17.853 baris) memetakan <code>rekening_id</code> ke <code>cif_sk</code> atau <code>cp_id</code>; itulah yang mengubah transfer antar rekening di <code>fact_transfer_giro</code> menjadi sisi <code>memasok</code> antar entitas. <code>map_entitas_graf</code> (6.000) menyimpan jejak pemetaan tiap debitur ke simpul ICIJ asalnya.</p>
+
+  <figure>
+  <div class="gulir">
+    <svg class="rajah" viewBox="0 0 1100 350" role="img" aria-label="Graf disnapshot bulanan, lalu satu snapshot dipilih per pengajuan menjadi feat_graf_pit, sementara fact_afiliasi_tersembunyi menyimpan ground truth di luar tabel sisi">
+      <defs><marker id="kaki-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" orient="auto"><path d="M0,5 L9,1 M0,5 L9,5 M0,5 L9,9" fill="none" stroke="currentColor" stroke-width="1.2"/></marker><marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><polygon points="0,1 9,5 0,9" fill="currentColor"/></marker></defs>
+      <rect x="770" y="24" width="300" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="784" y="49">fact_pengajuan</text>
+      <text class="t-sub" x="784" y="69">application_id &#183; tanggal</text>
+      <text class="t-jml" x="1056" y="69" text-anchor="end">6.000</text>
+      <rect x="30" y="132" width="280" height="76" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="44" y="157">gold_graph_nodes</text>
+      <text class="t-sub" x="44" y="177">+ gold_graph_edges</text>
+      <rect x="390" y="132" width="300" height="76" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="404" y="157">graph_snapshot_bulanan</text>
+      <text class="t-sub" x="404" y="177">node_id + snapshot_date</text>
+      <text class="t-jml" x="676" y="177" text-anchor="end">1.394.316</text>
+      <rect x="770" y="132" width="300" height="76" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="784" y="157">feat_graf_pit</text>
+      <text class="t-sub" x="784" y="177">application_id</text>
+      <text class="t-jml" x="1056" y="177" text-anchor="end">6.000</text>
+      <rect x="390" y="268" width="300" height="62" rx="3" fill="var(--permukaan)" stroke="var(--b)" stroke-width="1.3"/>
+      <text class="t-nama" x="404" y="293">fact_afiliasi_tersembunyi</text>
+      <text class="t-sub" x="404" y="313">ground truth &#183; 45 klaster</text>
+      <text class="t-jml" x="676" y="313" text-anchor="end">360</text>
+      <path class="hub" d="M310,170 H390" marker-end="url(#ah-b)"/>
+      <text class="t-rel" x="350" y="160" text-anchor="middle">36 bulan</text>
+      <path class="hub" d="M690,170 H770" marker-end="url(#ah-b)"/>
+      <text class="t-rel" x="730" y="124" text-anchor="middle">snapshot akhir bulan</text>
+      <text class="t-rel" x="730" y="230" text-anchor="middle">SEBELUM tanggal pengajuan</text>
+      <path class="hub" d="M920,86 V132" marker-end="url(#ah-b)"/>
+      <text class="t-rel" x="930" y="116" text-anchor="start">application_id</text>
+      <path class="hub" d="M390,299 H350 V170 H310" marker-end="url(#ah-b)" stroke-dasharray="5 4"/>
+      <text class="t-rel" x="346" y="250" text-anchor="end">edge injeksi tidak ditandai</text>
+    </svg>
+  </div>
+  <figcaption><b>ERD B2 &#183; dari graf ke fitur titik-waktu.</b> Satu baris fitur per pengajuan, diambil dari snapshot akhir bulan <em>sebelum</em> tanggal pengajuan. Aturan itulah yang diuji gerbang kualitas.</figcaption>
+</figure>
+
+  <h3>Kunci dan granularitas</h3>
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th>Tabel</th><th>Kunci utama</th><th>Menunjuk ke</th><th>Satu baris = </th><th>Baris</th></tr></thead>
+    <tbody>
+      <tr><td><code>gold_graph_nodes</code></td><td><code>node_id</code></td><td><code>ref_id</code> &#8594; cif_sk / pihak_id / alamat_id / cp_id</td><td>satu simpul</td><td class="num">38.731</td></tr>
+      <tr><td><code>gold_graph_edges</code></td><td><code>edge_id</code></td><td><code>src_node_id</code>, <code>dst_node_id</code></td><td>satu relasi berjangka waktu</td><td class="num">93.506</td></tr>
+      <tr><td><code>graph_snapshot_bulanan</code></td><td><code>node_id</code> + <code>snapshot_date</code></td><td><code>node_id</code></td><td>simpul &#215; bulan (36 bulan)</td><td class="num">1.394.316</td></tr>
+      <tr><td><code>feat_graf_pit</code></td><td><code>application_id</code></td><td><code>cif_sk</code>, <code>snapshot_date</code></td><td>satu pengajuan, snapshot sebelum tanggalnya</td><td class="num">6.000</td></tr>
+      <tr><td><code>fact_kepemilikan</code></td><td><code>rel_id</code></td><td><code>pihak_id</code>, <code>cif_sk</code></td><td>satu hubungan kepemilikan</td><td class="num">54.153</td></tr>
+      <tr><td><code>fact_kepengurusan</code></td><td><code>pihak_id</code> + <code>cif_sk</code></td><td><code>pihak_id</code>, <code>cif_sk</code></td><td>satu jabatan</td><td class="num">43.039</td></tr>
+      <tr><td><code>fact_alamat_debitur</code></td><td><code>cif_sk</code> + <code>alamat_id</code></td><td><code>alamat_id</code></td><td>satu debitur di satu alamat</td><td class="num">5.318</td></tr>
+      <tr><td><code>fact_transfer_giro</code></td><td><code>transfer_id</code></td><td><code>rekening_id_pengirim/penerima</code></td><td>satu transfer</td><td class="num">297.553</td></tr>
+      <tr><td><code>fact_afiliasi_tersembunyi</code></td><td><code>afiliasi_id</code></td><td><code>cif_sk</code></td><td>satu anggota klaster afiliasi</td><td class="num">360</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="abt">
+  <p class="eyebrow">Paket serah terima</p>
+  <h2>Dari gold ke ABT</h2>
+  <p>Enam tabel siap model. Yang menentukan bukan bentuknya, tapi apa yang <em>tidak</em> ikut: kolom terlarang disaring di sini dan diuji di gerbang kualitas.</p>
+
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th>Tabel gold</th><th><code>abt_pd</code></th><th><code>abt_ews</code></th><th><code>abt_lgd</code></th><th><code>abt_pengajuan_ditolak</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>fact_pengajuan</code></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>fact_fasilitas</code></td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>fact_laporan_keuangan</code></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>fact_agunan</code></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai">&#9679;</td><td class="pakai"></td></tr>
+      <tr><td><code>feat_graf_pit</code></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>dim_debitur</code></td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>dim_produk_fasilitas</code></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td><td class="pakai">&#9679;</td></tr>
+      <tr><td><code>fact_default</code></td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai">&#9679;</td><td class="pakai"></td></tr>
+      <tr><td><code>fact_kolektibilitas</code></td><td class="pakai"></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td></tr>
+      <tr><td><code>fact_covenant</code></td><td class="pakai"></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td></tr>
+      <tr><td><code>fact_eksposur_grup</code></td><td class="pakai"></td><td class="pakai">&#9679;</td><td class="pakai"></td><td class="pakai"></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th>ABT</th><th>Butir baris</th><th>Target</th><th>Baris</th><th>Kolom</th></tr></thead>
+    <tbody>
+      <tr><td><code>abt_pd</code></td><td>satu fasilitas pada tanggal pencairan</td><td><code>y_default_12bln</code></td><td class="num">4.183</td><td class="num">93</td></tr>
+      <tr><td><code>abt_ews</code></td><td>fasilitas &#215; bulan berjalan</td><td><code>y_default_6bln</code></td><td class="num">126.128</td><td class="num">20</td></tr>
+      <tr><td><code>abt_lgd</code></td><td>satu kejadian gagal bayar</td><td><code>y_lgd_realisasi</code></td><td class="num">214</td><td class="num">26</td></tr>
+      <tr><td><code>abt_lgd_sumber</code></td><td>satu pinjaman SBA (silver, untuk pretraining)</td><td><code>y_lgd_realisasi</code></td><td class="num">156.824</td><td class="num">12</td></tr>
+      <tr><td><code>abt_pengajuan_ditolak</code></td><td>pengajuan yang tidak cair (bias seleksi)</td><td>&#8212; tanpa target</td><td class="num">1.486</td><td class="num">87</td></tr>
+      <tr><td><code>kamus_data_abt</code></td><td>satu kolom ABT</td><td>&#8212;</td><td class="num">238</td><td class="num">8</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <ul class="catatan">
+    <li><b><code>abt_pd</code> berisi 4.183 baris, bukan 4.400.</b> Selisih 217 fasilitas dibuang oleh ambang kewajaran neraca <em>aset &#8804; 10&#215; penjualan</em> (<code>settings.aset_thd_penjualan_maks</code>). Penskalaan rupiah menjangkar pada penjualan, jadi tanpa ambang ini ada debitur beromzet puluhan miliar dengan total aset ratusan triliun &#8212; rasio sampai 73.000&#215; &#8212; yang merusak seluruh blok <code>fin_</code>. Pada <code>abt_pengajuan_ditolak</code> ambang yang sama membuang 114 baris.</li>
+    <li><b>Ambangnya dipasang di lapisan ABT, bukan di pemilihan panel.</b> Itu pilihan sadar: memasangnya di <code>joins.pilih_panel_debitur</code> menciutkan kolam perusahaan layak dari 6.251 ke 5.810, sehingga populasi turun ke 5.810 dan seluruh tabel gold ikut berubah &#8212; termasuk yang sudah dipakai melatih model EWS dan LGD.</li>
+    <li><b>Populasi antar-ABT karena itu belum seragam.</b> <code>abt_pd</code> dan <code>abt_pengajuan_ditolak</code> sudah disaring; <code>abt_ews</code> (6.002 baris / 217 debitur) dan <code>abt_lgd</code> (9 baris) belum. Menyeragamkannya menuntut pelatihan ulang kedua model itu, dan <code>abt_lgd</code> akan turun dari 214 ke 205 kejadian. Utang ini tercatat di docstring <code>build_abt</code>.</li>
+    <li><b>Lapisan gold tetap memuat populasi penuh.</b> 1.050 dari 18.000 baris <code>fact_laporan_keuangan</code> (522 debitur) berada di atas ambang, dan <code>feat_graf_pit</code> tetap 6.000 baris &#8212; graf memang tidak boleh dipotong. Konsekuensinya <b>angka portofolio di lapisan BI tidak sama dengan populasi model PD</b>, dan itu harus disebut saat keduanya dilaporkan berdampingan.</li>
+    <li><b>Blok <code>tw_*</code> tidak pernah masuk ABT.</b> Rasio Taiwan dicocokkan memakai label, jadi ia membawa informasi target (AUC 0,826 sendirian). Kolomnya tinggal di <code>fact_laporan_keuangan</code> sebagai catatan silsilah saja.</li>
+    <li><b><code>src_is_laundering</code> tinggal di <code>fact_transfer_giro</code>.</b> Kolom itu untuk mengevaluasi <code>circular_payment_flag</code>, bukan fitur model &#8212; dan tidak pernah ikut ke <code>feat_graf_pit</code>.</li>
+    <li><b><code>fact_afiliasi_tersembunyi</code> hidup terpisah dari <code>gold_graph_edges</code>.</b> Sisi hasil injeksi sengaja tidak diberi penanda: kalau ditandai, ia tidak lagi tersembunyi.</li>
+  </ul>
+</section>
+
+<section id="tata">
+  <p class="eyebrow">Tata kelola</p>
+  <h2>Tiga tabel yang membuat sisanya bisa dipercaya</h2>
+  <div class="tabel-gulir">
+  <table>
+    <thead><tr><th>Tabel</th><th>Isi</th><th>Baris</th></tr></thead>
+    <tbody>
+      <tr><td><code>data_quality_report</code></td><td>hasil tiap aturan gerbang kualitas: kunci unik, integritas referensial, rentang nilai, urutan waktu, anti-bocor, kewajaran statistik</td><td class="num">81</td></tr>
+      <tr><td><code>parameter_build</code></td><td>parameter yang dipakai saat build &#8212; seed, jumlah debitur, ambang covenant, porsi default terpakai</td><td class="num">46</td></tr>
+      <tr><td><code>kamus_data_abt</code></td><td>keterangan tiap kolom ABT: blok, dtype, persen kosong, contoh nilai</td><td class="num">238</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>
+  Dibaca dari <code>data/gold</code>, build tercatat 28 Agustus 2026 (seed 42, N_DEBITUR 6.000). Angka di halaman ini adalah jumlah baris sebenarnya, bukan angka rencana. Silsilah tiap kolom ada di <code>docs/data-lineage.md</code>; cara memakai ABT ada di <code>docs/serah-terima-data-scientist.md</code>.
+</footer>
+
+</div>
