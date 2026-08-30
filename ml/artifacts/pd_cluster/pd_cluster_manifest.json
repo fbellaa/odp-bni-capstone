@@ -1,0 +1,50 @@
+{
+  "model": "PD_RISK_CLUSTERING_KMEANS",
+  "version": "1.0.0",
+  "files": {
+    "pd_cluster_champion.joblib": {
+      "sha256": "b0b69d382e55fdab15a9a9b432cafd9780bda8a2dc007d3c5eb5b3b01efda47e",
+      "size_bytes": 32008
+    },
+    "pd_cluster_metadata.json": {
+      "sha256": "a0de41be3bc9c92ffa34ce85b0d4a1ab11120c7018b04d3cac033ebc95080327",
+      "size_bytes": 1882
+    },
+    "pd_cluster_feature_schema.json": {
+      "sha256": "8c927f6025fb31e5ef262ed39e2f14df8f506327885e1d67bb3bcfe7231bb679",
+      "size_bytes": 7911
+    },
+    "pd_cluster_metrics.json": {
+      "sha256": "bb7de33e824a68e64373c7208586ee4147ec4b841627e1d95d318bc3ec469f30",
+      "size_bytes": 1881
+    },
+    "pd_cluster_profiles.json": {
+      "sha256": "de5c51d7c7e0403e0859514eacf1e711df56e964be1f0d7c59138f2cba7503c4",
+      "size_bytes": 2836
+    },
+    "pd_cluster_profile.csv": {
+      "sha256": "0438de8afc50344ae992bf0bb5f291b3bb7e327cc0d0015c79a0b092f83c4646",
+      "size_bytes": 1430
+    },
+    "pd_cluster_summary.csv": {
+      "sha256": "f357654232ace6c94de4fcc5369368483f25394eece6760188c3e7da20c3700c",
+      "size_bytes": 584
+    },
+    "pd_cluster_diagnostic.csv": {
+      "sha256": "f542fe2c0416615f71fc7d83e9a0bd96a65e08ca2de3cef8c2f1ffacbc827ff0",
+      "size_bytes": 299
+    },
+    "pd_cluster_reference_stats.json": {
+      "sha256": "a1bca81ee855a04e09362bd1f0c775dd502801c7bf0148d9c5104b7c996a1cca",
+      "size_bytes": 9907
+    },
+    "pd_cluster_requirements.txt": {
+      "sha256": "39b84919d60c6e42dc52b1fcc3c2ade0606541cd8f2d2fb494e95bd78b0ac743",
+      "size_bytes": 61
+    },
+    "pd_cluster_predictor.py": {
+      "sha256": "cd904bf32dbf90cc9062b1256d60e8fbe1712cc3046f025b3f64c60f4fa55e80",
+      "size_bytes": 8520
+    }
+  }
+}

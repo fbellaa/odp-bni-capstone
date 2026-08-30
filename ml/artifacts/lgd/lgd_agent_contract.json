@@ -1,0 +1,138 @@
+{
+  "contract_version": "1.0",
+  "model": "LGD_XGBOOST",
+  "model_version": "1.0.0",
+  "tool_spec": {
+    "type": "function",
+    "function": {
+      "name": "predict_lgd",
+      "description": "Predict Loss Given Default (LGD) using the production XGBoost regression model. Pass only feature values extracted or deterministically derived from source documents. Never invent missing values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "features": {
+            "type": "object",
+            "description": "LGD model-ready feature dictionary. If a value is unavailable, omit it instead of guessing.",
+            "properties": {
+              "app_tenor_bulan": {
+                "type": "number",
+                "description": "Numeric LGD feature 'app_tenor_bulan'. Use extracted/derived value only. Do not invent."
+              },
+              "app_porsi_penjaminan": {
+                "type": "number",
+                "description": "Numeric LGD feature 'app_porsi_penjaminan'. Use extracted/derived value only. Do not invent."
+              },
+              "app_jenis_fasilitas": {
+                "type": "string",
+                "description": "Categorical LGD feature 'app_jenis_fasilitas'. Use a model-compatible category only. Do not invent.",
+                "enum": [
+                  "investasi",
+                  "modal_kerja"
+                ]
+              },
+              "app_sektor_kbli": {
+                "type": "string",
+                "description": "Categorical LGD feature 'app_sektor_kbli'. Use a model-compatible category only. Do not invent.",
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D",
+                  "F",
+                  "G",
+                  "H",
+                  "I",
+                  "J",
+                  "K",
+                  "L",
+                  "M",
+                  "N",
+                  "O",
+                  "P",
+                  "Q",
+                  "R",
+                  "S"
+                ]
+              },
+              "app_skala_pegawai": {
+                "type": "string",
+                "description": "Categorical LGD feature 'app_skala_pegawai'. Use a model-compatible category only. Do not invent.",
+                "enum": [
+                  "besar",
+                  "kecil",
+                  "korporasi",
+                  "menengah",
+                  "mikro"
+                ]
+              },
+              "app_perusahaan_baru": {
+                "type": "string",
+                "description": "Categorical LGD feature 'app_perusahaan_baru'. Use a model-compatible category only. Do not invent.",
+                "enum": [
+                  "False",
+                  "True"
+                ]
+              },
+              "app_dokumen_ringkas": {
+                "type": "string",
+                "description": "Categorical LGD feature 'app_dokumen_ringkas'. Use a model-compatible category only. Do not invent.",
+                "enum": [
+                  "False",
+                  "True"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "python_entrypoint": "ml.inference.lgd_predictor.predict_lgd_tool",
+  "input_contract": {
+    "top_level_argument": "features",
+    "feature_names": [
+      "app_tenor_bulan",
+      "app_porsi_penjaminan",
+      "app_jenis_fasilitas",
+      "app_sektor_kbli",
+      "app_skala_pegawai",
+      "app_perusahaan_baru",
+      "app_dokumen_ringkas"
+    ],
+    "accepted_aliases": {
+      "app_tenor_bulan": "app_tenor_bulan_sba"
+    },
+    "minimum_completeness_for_scoring": 0.8,
+    "missing_value_rule": "Do not hallucinate missing values. Omit unavailable fields or pass null."
+  },
+  "output_contract": {
+    "possible_statuses": [
+      "ok",
+      "insufficient_data",
+      "error"
+    ],
+    "fields_when_ok": [
+      "status",
+      "model",
+      "model_version",
+      "prediction_type",
+      "calibrated",
+      "post_processing",
+      "lgd_raw",
+      "lgd",
+      "lgd_pct",
+      "risk_band",
+      "feature_completeness",
+      "observed_feature_count",
+      "expected_feature_count",
+      "missing_features",
+      "null_features",
+      "warning"
+    ]
+  }
+}

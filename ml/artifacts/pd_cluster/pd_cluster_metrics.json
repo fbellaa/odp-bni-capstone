@@ -1,0 +1,66 @@
+{
+  "model": "PD_RISK_CLUSTERING_KMEANS",
+  "model_version": "1.0.0",
+  "methodology": {
+    "type": "unsupervised clustering",
+    "algorithm": "KMeans",
+    "n_clusters": 2,
+    "target_used_for_training": false,
+    "target_usage": "y_default_12bln is used only post-hoc for validation and cluster naming."
+  },
+  "development_pre_refit": {
+    "train": {
+      "TN": 2506,
+      "FP": 1048,
+      "FN": 21,
+      "TP": 95,
+      "accuracy": 0.7087193460490463,
+      "precision": 0.0831146106736658,
+      "recall": 0.8189655172413793,
+      "f1": 0.15091342335186655,
+      "ARI": 0.056474721021789395,
+      "NMI": 0.04735693466160743,
+      "silhouette": 0.16533491143018142,
+      "davies_bouldin": 2.505766160113294,
+      "inertia": 106657.86358819279
+    },
+    "oot": {
+      "TN": 256,
+      "FP": 110,
+      "FN": 7,
+      "TP": 6,
+      "accuracy": 0.6912928759894459,
+      "precision": 0.05172413793103448,
+      "recall": 0.46153846153846156,
+      "f1": 0.09302325581395349,
+      "ARI": 0.01791197837539964,
+      "NMI": 0.004932239462829012,
+      "silhouette": 0.1430328404636827,
+      "davies_bouldin": 2.7347310517878665
+    },
+    "cluster_mapping": {
+      "0": "High Risk / Default-like",
+      "1": "Low Risk / Non-default-like"
+    },
+    "note": "OOT metrics are computed before OOT is included in final production refit."
+  },
+  "production_refit": {
+    "fit_population": "train_plus_oot",
+    "fit_rows": 4183,
+    "silhouette": 0.1582189628694904,
+    "davies_bouldin": 2.52182615893032,
+    "inertia": 121519.80343392427,
+    "cluster_mapping": {
+      "1": "High Risk / Default-like",
+      "0": "Low Risk / Non-default-like"
+    },
+    "pca": {
+      "n_components": 22,
+      "explained_variance_ratio_sum": 0.9118002514098538
+    },
+    "default_rate_by_cluster": {
+      "0": 0.010130246020260492,
+      "1": 0.07859922178988327
+    }
+  }
+}

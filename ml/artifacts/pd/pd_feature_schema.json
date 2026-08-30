@@ -1,0 +1,340 @@
+{
+  "model": "PD_12M",
+  "champion_name": "PD_XGB_BASELINE",
+  "calibrated": false,
+  "prediction_type": "raw_xgboost_probability",
+  "number_of_features": 47,
+  "feature_order": [
+    "fin_asset_turnover",
+    "fin_cfo_to_ebitda",
+    "fin_cfo_to_liability",
+    "fin_current_ratio",
+    "fin_debt_to_ebitda",
+    "fin_debt_to_ebitda_delta_3thn",
+    "fin_debt_to_ebitda_yoy",
+    "fin_der",
+    "fin_der_delta_3thn",
+    "fin_der_yoy",
+    "fin_dio_hari",
+    "fin_dso_hari",
+    "fin_ebitda_rp",
+    "fin_ekuitas_rp",
+    "fin_gross_margin",
+    "fin_growth_penjualan",
+    "fin_icr",
+    "fin_icr_delta_3thn",
+    "fin_icr_yoy",
+    "fin_laba_bersih_rp",
+    "fin_operating_margin",
+    "fin_penjualan_rp",
+    "fin_quick_ratio",
+    "fin_re_to_ta",
+    "fin_roa",
+    "fin_siklus_modal_kerja_hari",
+    "fin_total_aset_rp",
+    "fin_total_liabilitas_rp",
+    "fin_wc_to_ta",
+    "fin_ebitda_nonpositif",
+    "app_ada_agunan_likuid",
+    "app_ada_jaminan_silang",
+    "app_dokumen_ringkas",
+    "app_jenis_fasilitas",
+    "app_jumlah_agunan",
+    "app_kelas_penjualan",
+    "app_nama_produk",
+    "app_nilai_likuidasi_rp",
+    "app_penjualan_rp",
+    "app_plafon_diminta_rp",
+    "app_rating_internal",
+    "app_revolving",
+    "app_sektor_kbli",
+    "app_skor_kredit",
+    "app_tahun_berdiri",
+    "app_tenor_bulan",
+    "app_umur_perusahaan_tahun"
+  ],
+  "features": {
+    "fin_asset_turnover": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_cfo_to_ebitda": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_cfo_to_liability": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_current_ratio": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_debt_to_ebitda": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_debt_to_ebitda_delta_3thn": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_debt_to_ebitda_yoy": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_der": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_der_delta_3thn": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_der_yoy": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_dio_hari": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_dso_hari": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_ebitda_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_ekuitas_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_gross_margin": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_growth_penjualan": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_icr": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_icr_delta_3thn": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_icr_yoy": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_laba_bersih_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_operating_margin": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_penjualan_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_quick_ratio": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_re_to_ta": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_roa": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_siklus_modal_kerja_hari": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": true
+    },
+    "fin_total_aset_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_total_liabilitas_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_wc_to_ta": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "fin_ebitda_nonpositif": {
+      "dtype": "int8",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_ada_agunan_likuid": {
+      "dtype": "bool",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_ada_jaminan_silang": {
+      "dtype": "bool",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_dokumen_ringkas": {
+      "dtype": "bool",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_jenis_fasilitas": {
+      "dtype": "object",
+      "type": "categorical",
+      "nullable": false,
+      "observed_categories": [
+        "investasi",
+        "modal_kerja"
+      ]
+    },
+    "app_jumlah_agunan": {
+      "dtype": "int64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_kelas_penjualan": {
+      "dtype": "string",
+      "type": "categorical",
+      "nullable": false,
+      "observed_categories": [
+        "Rp 100-200 M",
+        "Rp 50-100 M",
+        "Rp 200-300 M",
+        "Rp 30-50 M"
+      ]
+    },
+    "app_nama_produk": {
+      "dtype": "object",
+      "type": "categorical",
+      "nullable": false,
+      "observed_categories": [
+        "Kredit Investasi Bangunan",
+        "Kredit Investasi Ekspansi",
+        "Kredit Investasi Mesin",
+        "Kredit Modal Kerja Transaksional",
+        "Kredit Modal Kerja Revolving"
+      ]
+    },
+    "app_nilai_likuidasi_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_penjualan_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_plafon_diminta_rp": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_rating_internal": {
+      "dtype": "object",
+      "type": "categorical",
+      "nullable": false,
+      "observed_categories": [
+        "BBB",
+        "A",
+        "BB",
+        "B",
+        "AA",
+        "CCC",
+        "AAA",
+        "CC",
+        "C"
+      ]
+    },
+    "app_revolving": {
+      "dtype": "bool",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_sektor_kbli": {
+      "dtype": "object",
+      "type": "categorical",
+      "nullable": false,
+      "observed_categories": [
+        "G",
+        "S",
+        "M",
+        "I",
+        "F",
+        "C",
+        "Q",
+        "N",
+        "H",
+        "L",
+        "J",
+        "R",
+        "K",
+        "A",
+        "P",
+        "B",
+        "D"
+      ]
+    },
+    "app_skor_kredit": {
+      "dtype": "float64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_tahun_berdiri": {
+      "dtype": "int64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_tenor_bulan": {
+      "dtype": "int64",
+      "type": "numeric",
+      "nullable": false
+    },
+    "app_umur_perusahaan_tahun": {
+      "dtype": "int64",
+      "type": "numeric",
+      "nullable": false
+    }
+  }
+}

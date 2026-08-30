@@ -1,0 +1,95 @@
+{
+  "app_tenor_bulan": {
+    "type": "numeric",
+    "count": 156610,
+    "missing_count": 0,
+    "mean": 57.424762148010984,
+    "median": 50.0,
+    "p25": 30.0,
+    "p75": 69.0,
+    "p95": 147.0,
+    "min": 1.0,
+    "max": 461.0
+  },
+  "app_porsi_penjaminan": {
+    "type": "numeric",
+    "count": 156610,
+    "missing_count": 0,
+    "mean": 0.6441510808522849,
+    "median": 0.5,
+    "p25": 0.5,
+    "p75": 0.85,
+    "p95": 0.9,
+    "min": 0.1219,
+    "max": 1.0
+  },
+  "app_jenis_fasilitas": {
+    "type": "categorical",
+    "count": 156610,
+    "missing_count": 0,
+    "n_unique": 2,
+    "top_categories": {
+      "investasi": 106054,
+      "modal_kerja": 50556
+    }
+  },
+  "app_sektor_kbli": {
+    "type": "categorical",
+    "count": 156610,
+    "missing_count": 0,
+    "n_unique": 18,
+    "top_categories": {
+      "G": 54815,
+      "F": 15337,
+      "I": 14822,
+      "S": 14168,
+      "M": 12900,
+      "C": 10354,
+      "N": 7617,
+      "H": 5902,
+      "Q": 5700,
+      "L": 3878,
+      "R": 2995,
+      "J": 2803,
+      "K": 2682,
+      "P": 1546,
+      "A": 808,
+      "B": 156,
+      "D": 92,
+      "O": 35
+    }
+  },
+  "app_skala_pegawai": {
+    "type": "categorical",
+    "count": 156610,
+    "missing_count": 0,
+    "n_unique": 5,
+    "top_categories": {
+      "mikro": 108814,
+      "kecil": 38836,
+      "menengah": 8541,
+      "besar": 398,
+      "korporasi": 21
+    }
+  },
+  "app_perusahaan_baru": {
+    "type": "categorical",
+    "count": 156610,
+    "missing_count": 0,
+    "n_unique": 2,
+    "top_categories": {
+      "True": 109395,
+      "False": 47215
+    }
+  },
+  "app_dokumen_ringkas": {
+    "type": "categorical",
+    "count": 156610,
+    "missing_count": 0,
+    "n_unique": 2,
+    "top_categories": {
+      "False": 146777,
+      "True": 9833
+    }
+  }
+}

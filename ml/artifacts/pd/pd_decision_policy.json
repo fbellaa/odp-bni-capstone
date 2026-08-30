@@ -1,0 +1,21 @@
+{
+  "model": "PD_12M",
+  "prediction_type": "raw_xgboost_probability",
+  "calibrated": false,
+  "operational_threshold": 0.26563698053359985,
+  "target_recall": 0.8,
+  "threshold_selection": "Maximum OOF precision subject to minimum target recall.",
+  "risk_cutoffs": {
+    "q50": 0.07617848739027977,
+    "q80": 0.2921055912971497,
+    "q95": 0.7059564173221586
+  },
+  "risk_band_definition": {
+    "Low": "PD <= raw OOF P50",
+    "Medium": "raw OOF P50 < PD <= P80",
+    "High": "raw OOF P80 < PD <= P95",
+    "Very High": "PD > raw OOF P95"
+  },
+  "alert_rule": "alert_flag = 1 when raw XGBoost probability >= threshold",
+  "note": "Risk bands are relative to the development portfolio distribution."
+}
