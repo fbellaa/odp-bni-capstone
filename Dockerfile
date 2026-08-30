@@ -37,6 +37,10 @@ RUN pip install --no-cache-dir \
 COPY copilot/ copilot/
 COPY app/ app/
 COPY docs/ docs/
+# Artefak model PD/EWS/LGD/klaster. Disalin, bukan di-mount: 3,2 MB, sudah
+# ter-track di git, dan `lib/model_nyata.py` membacanya lewat AKAR/ml/artifacts.
+# Tanpa baris ini seluruh lapisan model nyata jatuh ke mock tanpa suara.
+COPY ml/artifacts/ ml/artifacts/
 # Lapisan graf; `telusuri_afiliasi()` diimpor jembatan dokumen.
 COPY pipelines/ pipelines/
 
