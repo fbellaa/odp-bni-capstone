@@ -259,8 +259,12 @@ if jalankan:
         snapshot = gn.snapshot_tersedia()
         tanggal_telaah = snapshot[0] if snapshot else None
         resolusi = None
-        if tanggal_telaah is not None and dokumen is not None and dokumen.berkas is not None:
-            arg = dokumen.berkas.argumen_resolusi()
+        # `berkas_untuk_agen`, bukan `dokumen.berkas`: berkas hanya pernah diisi
+        # jalur model, sehingga pengajuan yang seluruhnya terbaca sapuan pola
+        # melewati resolusi tanpa jejak dan tampil sebagai nol afiliasi -
+        # padahal nama pengurusnya ada di tangan.
+        if tanggal_telaah is not None and dokumen is not None:
+            arg = pc.berkas_untuk_agen(dokumen, entitas).argumen_resolusi()
             resolusi = gn.resolusi_calon(
                 tanggal_telaah,
                 alamat_operasional=arg["alamat_operasional"],
