@@ -110,12 +110,52 @@ def _model(peran: str, profil: str) -> str:
     return PROFIL_MODEL[profil][peran]
 
 
+def _url_ollama(nilai: str | None) -> str:
+    """Ubah isi OLLAMA_HOST menjadi URL yang benar-benar bisa dituju.
+
+    `OLLAMA_HOST` menanggung dua arti yang berbeda. Bagi server Ollama ia
+    alamat BIND; bagi klien mana pun - termasuk kode ini - ia alamat TUJUAN.
+    Siapa pun yang menyetel `OLLAMA_HOST=0.0.0.0` supaya server mau menerima
+    koneksi dari container lalu mendapati klien di mesin yang sama berhenti
+    bekerja, karena 0.0.0.0 berarti "dengarkan semua antarmuka" dan bukan
+    alamat yang bisa dihubungi. Gejalanya menyesatkan: `hidup()` mengembalikan
+    False, dan antarmuka menyarankan menjalankan `ollama serve` justru ketika
+    server sudah jalan.
+
+    Bentuk singkat seperti "localhost:11434" atau "127.0.0.1" juga diterima -
+    keduanya lazim ditulis orang, dan menolaknya tidak ada gunanya.
+    """
+    teks = (nilai or "").strip().rstrip("/")
+    if not teks:
+        return "http://127.0.0.1:11434"
+
+    skema, _, sisa = teks.partition("://")
+    if not sisa:
+        skema, sisa = "http", teks
+
+    # Alamat bind "semua antarmuka" tidak bisa dituju; yang dimaksud penyetelnya
+    # selalu mesin ini sendiri. Diperiksa atas `sisa` yang utuh, sebelum port
+    # dipisah: "::" yang dibelah pada titik dua menyisakan inang kosong.
+    if sisa in ("0.0.0.0", "::", "[::]", "*"):
+        return f"{skema}://127.0.0.1:11434"
+
+    if sisa.startswith("["):                      # IPv6 berkurung: [::1]:11434
+        inang, _, ekor = sisa.partition("]")
+        inang += "]"
+        porta = ekor.lstrip(":")
+    else:
+        inang, _, porta = sisa.partition(":")
+    if inang in ("0.0.0.0", "[::]", ""):
+        inang = "127.0.0.1"
+    return f"{skema}://{inang}:{porta or '11434'}"
+
+
 @dataclass(frozen=True)
 class Pengaturan:
     """Parameter yang boleh digeser lewat environment variable."""
 
     profil: str = os.getenv("COPILOT_PROFIL", PROFIL_BAWAAN)
-    host_ollama: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+    host_ollama: str = _url_ollama(os.getenv("OLLAMA_HOST"))
 
     # Detik. Ekstraksi satu lapkeu 20 halaman di CPU bisa lewat dari semenit.
     timeout: int = int(os.getenv("COPILOT_TIMEOUT", "300"))

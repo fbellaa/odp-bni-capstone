@@ -76,7 +76,7 @@ status = pc.status_lengkap()
 # Parameter kebijakan diturunkan dari lapisan emas sekali per proses, sebelum
 # mesin skoring dipakai sama sekali. Laporannya menyebut mana yang sudah datang
 # dari tabel dan mana yang masih asumsi bawaan.
-sumber_parameter = pk.terapkan()
+pk.terapkan()
 
 hero(
     "01",
@@ -110,18 +110,14 @@ with st.sidebar:
         ("Index kebijakan", status["index"], "python -m copilot.rag.indeks"),
     ]:
         st.markdown(baris_status(label, siap, pesan_kurang), unsafe_allow_html=True)
-    with st.expander("Asal parameter kebijakan"):
-        for baris in pk.ringkas_sumber(sumber_parameter):
-            st.caption(baris)
     for nama_model, pesan in (status.get("galat_muat") or {}).items():
         st.error(f"Model {nama_model.upper()} gagal dimuat — `{pesan}`")
     if not status["copilot"]:
         st.warning("Paket `copilot` tidak bisa diimpor — unggahan PDF dinonaktifkan.")
         st.code(status["galat_impor"] or "-", language="text")
-    st.divider()
-    kecepatan = st.select_slider("Kecepatan jejak agen", ["lambat", "sedang", "cepat"],
-                                 value="sedang")
-JEDA = {"lambat": 0.6, "sedang": 0.28, "cepat": 0.03}[kecepatan]
+# Jeda antar langkah pada jejak agen. Dulu bisa digeser dari sidebar; sekarang
+# tetap, karena satu-satunya nilai yang pernah dipakai saat demo adalah ini.
+JEDA = 0.28
 
 # ------------------------------------------------------------------ masukan
 judul_bagian(
@@ -233,8 +229,9 @@ if jalankan:
             st.write(f"**Langkah 1 · Membaca {len(unggahan)} berkas PDF**")
             path_list = [pc.simpan_unggahan(u) for u in unggahan]
             try:
-                dokumen = (pc.baca_dengan_llm(path_list, jenis_manual) if pakai_llm
-                           else pc.baca_dengan_pola(path_list, jenis_manual))
+                dokumen = pc.baca_dokumen_pengajuan(
+                    path_list, jenis_manual, boleh_llm=pakai_llm
+                )
                 st.write(
                     f"Jalur `{dokumen.jalur}` · {len(dokumen.per_berkas)} berkas terbaca · "
                     f"{len(dokumen.fakta)} pos keuangan ditemukan"
@@ -310,8 +307,15 @@ if jalankan:
 
         # 4. rencana dan pemanggilan tool
         rencana = dummy_data.rencana_agen(entitas)
-        st.write(f"**Langkah 4 · Agen memanggil {len(rencana)} tool**")
-        jejak_agen = None
+        # Judulnya dipesan dulu dan diisi belakangan. Berapa tool yang dipanggil
+        # baru diketahui setelah agen selesai: ia memilih sendiri, mengulang tool
+        # yang argumennya ditolak, dan berhenti kapan ia menganggap cukup.
+        # Mencetak panjang `rencana` di sini - rencana tiruan yang pada jalur
+        # agen nyata tidak pernah dieksekusi - berarti mengumumkan angka yang
+        # kebetulan tidak sama dengan yang lewat di bawahnya.
+        kepala_agen = st.empty()
+        kepala_agen.write("**Langkah 4 · Agen memilih tool…**")
+        jejak_agen, terkumpul = None, []
         if pakai_agen:
             try:
                 pengajuan_agen = {
@@ -335,7 +339,7 @@ if jalankan:
                 berkas_agen = (dokumen.berkas if dokumen and dokumen.berkas
                                else ck.BerkasPengajuan(nama_debitur=entitas.get("nama_debitur")))
                 konteks = ck.memo_copilot.konteks_pengajuan(berkas_agen, pengajuan_agen, None)
-                penampung, terkumpul = st.empty(), []
+                penampung = st.empty()
 
                 def catat(j) -> None:
                     terkumpul.append(f"{'✔' if j.berhasil else '✘'} `{j.nama}` — {j.ringkas()}")
@@ -345,9 +349,25 @@ if jalankan:
             except Exception as exc:
                 st.warning(f"Agen tool calling tidak bisa dijalankan: {exc}")
         if jejak_agen is None:
+            kepala_agen.write(
+                f"**Langkah 4 · Rencana tiruan: {len(rencana)} tool** — agen tidak "
+                "dijalankan, daftar di bawah belum dieksekusi."
+            )
             for i, langkah in enumerate(rencana, start=1):
                 st.write(f"`{langkah['tool']}({langkah['arg']})` — {langkah['keterangan']}")
                 time.sleep(JEDA / 3)
+        elif not terkumpul:
+            kepala_agen.write(
+                "**Langkah 4 · Agen tidak memanggil tool apa pun** — "
+                f"berhenti setelah {jejak_agen.putaran} putaran "
+                f"(`{jejak_agen.berhenti_karena}`). Lihat tab Jejak tool."
+            )
+        else:
+            gagal = sum(1 for b in terkumpul if b.startswith("✘"))
+            kepala_agen.write(
+                f"**Langkah 4 · Agen memanggil {len(terkumpul)} tool**"
+                + (f" · {gagal} ditolak dan diulang" if gagal else "")
+            )
 
         # 5. model
         st.write("**Langkah 5 · Model PD, LGD, dan pemetaan klaster**")
@@ -813,7 +833,33 @@ with tab_kebijakan:
                 "```\npython -m copilot.rag.indeks\n```")
 
 with tab_tool:
-    if jejak_agen is not None:
+    if jejak_agen is not None and not jejak_agen.rekaman.jejak:
+        # Agen jalan tetapi tidak memanggil satu tool pun. Tanpa penjelasan,
+        # yang terlihat cuma tabel kosong - tidak terbedakan dari agen yang
+        # tidak dinyalakan, padahal sebabnya bisa jauh berbeda: model tidak
+        # bisa dihubungi, atau model menjawab dengan prosa alih-alih memanggil
+        # tool. Yang kedua lazim pada model kecil, dan itu keterangan yang
+        # menentukan apakah profilnya perlu dinaikkan.
+        SEBAB = {
+            "galat_model": "model bahasa tidak bisa dihubungi saat agen berjalan",
+            "batas_putaran": f"batas {jejak_agen.putaran} putaran tercapai "
+                             "sebelum satu tool pun dipanggil",
+            "selesai": "model menjawab langsung tanpa memanggil tool — lazim pada "
+                       "model kecil; naikkan peran agen lewat COPILOT_MODEL_AGEN",
+        }
+        st.warning(
+            "Agen tidak memanggil tool apa pun — "
+            + SEBAB.get(jejak_agen.berhenti_karena, jejak_agen.berhenti_karena)
+            + f". Berhenti setelah {jejak_agen.putaran} putaran."
+        )
+        if (jejak_agen.ringkasan or "").strip():
+            st.caption("Yang dijawab model alih-alih memanggil tool:")
+            st.code(jejak_agen.ringkasan.strip(), language="text")
+        st.caption(
+            "Angka pada memo karena itu datang dari mesin deterministik, bukan "
+            "dari tool yang dipanggil agen."
+        )
+    elif jejak_agen is not None:
         st.caption("Setiap angka di bawah dihitung tool, bukan ditulis model bahasa.")
         if jejak_agen.ada_kegagalan:
             st.warning(

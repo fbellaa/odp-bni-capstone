@@ -92,12 +92,12 @@ c1, c2, c3 = st.columns(3)
 with c1:
     plafon = st.slider(
         "Plafon fasilitas (Rp miliar)", MIN_PLAFON, MAKS_PLAFON,
-        _jepit(dasar["plafon"], MIN_PLAFON, MAKS_PLAFON), step=5,
+        _jepit(dasar["plafon"], MIN_PLAFON, MAKS_PLAFON), step=1,
         help=f"Batas segmen komersial: Rp {MIN_PLAFON} M sampai Rp {MAKS_PLAFON} M.",
     ) * 1e9
     penjualan = st.slider(
         "Penjualan tahunan (Rp miliar)", MIN_JUAL, MAKS_JUAL,
-        _jepit(dasar["penjualan_tahunan"], MIN_JUAL, MAKS_JUAL), step=5,
+        _jepit(dasar["penjualan_tahunan"], MIN_JUAL, MAKS_JUAL), step=1,
     ) * 1e9
 with c2:
     fasilitas = st.selectbox(
@@ -111,17 +111,23 @@ with c2:
     tenor = st.select_slider("Tenor (bulan)", [12, 24, 36, 48, 60, 84],
                              value=int(min([12, 24, 36, 48, 60, 84],
                                            key=lambda v: abs(v - int(dasar["tenor_bulan"])))))
-    ebitda_margin = st.slider("EBITDA margin", 0.04, 0.26, float(dasar["ebitda_margin"]), step=0.005,
-                              format="%.3f")
-    der = st.slider("Debt to equity ratio", 0.3, 4.0, float(dasar["der"]), step=0.05)
+    ebitda_margin = st.slider("EBITDA margin", 0.04, 0.26, float(dasar["ebitda_margin"]),
+                              step=0.001, format="%.3f")
+    der = st.slider("Debt to equity ratio", 0.3, 4.0, float(dasar["der"]), step=0.01)
 with c3:
     jenis_agunan = st.selectbox(
         "Struktur agunan", dummy_data.JENIS_AGUNAN,
         index=dummy_data.JENIS_AGUNAN.index(dasar["jenis_agunan"]),
     )
+    # Coverage bawaan disimpan sebelum dan sesudah dibulatkan ke kisi slider.
+    # Keduanya dipakai di bawah untuk mengenali apakah slider ini memang belum
+    # disentuh - kalau belum, nilai agunan yang dipakai adalah angka asli dari
+    # berkas, bukan hasil hitung balik plafon x coverage yang sudah dibulatkan.
+    _cov_asli = float(min(dasar.get("nilai_agunan", 0) / max(dasar["plafon"], 1), 2.5))
+    _cov_bawaan = round(_cov_asli / 0.01) * 0.01
     coverage = st.slider(
         "Pertanggungan agunan terhadap plafon", 0.0, 2.5,
-        float(min(dasar.get("nilai_agunan", 0) / max(dasar["plafon"], 1), 2.5)), step=0.05,
+        _cov_bawaan, step=0.01,
         disabled=("Tanpa agunan" in jenis_agunan),
     )
     group_share = st.slider(
@@ -165,6 +171,18 @@ with st.expander("Parameter lanjutan (kinerja, perilaku fasilitas, dan fitur gra
     umur = d3.slider("Umur badan usaha (tahun)", 2.0, 45.0,
                      float(dasar["umur_usaha_thn"]), step=1.0)
 
+# Selama plafon dan coverage masih pada posisi awal, nilai agunan dibawa apa
+# adanya dari halaman Copilot. Menghitungnya balik sebagai `plafon x coverage`
+# akan mengembalikan angka yang sudah kehilangan presisinya di kisi slider -
+# agunan Rp70,5 miliar terbaca 69,75 miliar hanya karena coverage 1,5667
+# dibulatkan. Begitu salah satu digeser, rumus itulah yang benar: coverage
+# memang jadi kendali simulasinya.
+_plafon_awal = _jepit(dasar["plafon"], MIN_PLAFON, MAKS_PLAFON) * 1e9
+if abs(coverage - _cov_bawaan) < 1e-9 and abs(plafon - _plafon_awal) < 1e-9:
+    _nilai_agunan = float(dasar.get("nilai_agunan", plafon * coverage))
+else:
+    _nilai_agunan = float(plafon * coverage)
+
 skenario = dict(
     nama_debitur=dasar.get("nama_debitur", "-"),
     sektor=dasar["sektor"], wilayah=dasar["wilayah"],
@@ -174,7 +192,7 @@ skenario = dict(
     utang_berbunga_eksisting=float(utang_eksisting),
     konversi_ebitda_kas=float(konversi), utilisasi_plafon=float(utilisasi),
     saldo_giro_rata=float(saldo_giro), umur_usaha_thn=float(umur),
-    jenis_agunan=jenis_agunan, nilai_agunan=float(plafon * coverage),
+    jenis_agunan=jenis_agunan, nilai_agunan=_nilai_agunan,
     buyer_concentration_hhi=float(buyer_hhi),
     supplier_concentration_hhi=float(supplier_hhi),
     neighbor_default_rate_1hop=float(tetangga),

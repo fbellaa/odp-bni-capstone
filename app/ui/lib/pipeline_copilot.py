@@ -1012,8 +1012,15 @@ def baca_dengan_pola(path_list: list[Path], jenis_manual: dict[str, str]) -> Has
     return hasil
 
 
-def baca_dengan_llm(path_list: list[Path], jenis_manual: dict[str, str]) -> HasilDokumen:
-    """Jalur penuh: `copilot.dokumen.ekstraksi` dengan model bahasa lokal."""
+def baca_dengan_llm(
+    path_list: list[Path], jenis_manual: dict[str, str],
+    pola: HasilDokumen | None = None,
+) -> HasilDokumen:
+    """Jalur penuh: `copilot.dokumen.ekstraksi` dengan model bahasa lokal.
+
+    `pola` boleh diisi hasil sapuan yang sudah terlanjur dihitung pemanggil,
+    supaya penggabungan di akhir tidak membaca ulang seluruh PDF.
+    """
     berkas = ck.baca_dokumen(list(path_list), jenis_manual)
     hasil = HasilDokumen(jalur="llm", berkas=berkas)
     for d in berkas.dokumen:
@@ -1068,59 +1075,221 @@ def baca_dengan_llm(path_list: list[Path], jenis_manual: dict[str, str]) -> Hasi
     if berkas.nama_debitur:
         hasil.fakta["nama_debitur"] = berkas.nama_debitur
         hasil.sumber_fakta["nama_debitur"] = "dokumen"
-    return _tambal_dengan_pola(hasil, path_list, jenis_manual)
+    return _utamakan_pola(hasil, path_list, jenis_manual, pola)
 
 
-def _tambal_dengan_pola(
-    hasil: HasilDokumen, path_list: list[Path], jenis_manual: dict[str, str]
-) -> HasilDokumen:
-    """Isi bagian yang tidak dihasilkan model bahasa dengan sapuan pola.
+# Pos laporan keuangan yang satuannya harus seragam. Saldo rekening koran
+# sengaja TIDAK ikut: ia berasal dari dokumen lain, yang lazim memakai rupiah
+# penuh meski lapkeu-nya disajikan dalam jutaan.
+POS_LAPKEU = (
+    "penjualan", "ebitda", "laba_bersih", "beban_bunga", "total_aset",
+    "total_liabilitas", "ekuitas", "utang_berbunga", "arus_kas_operasi",
+    "aset_lancar", "liabilitas_lancar", "persediaan", "laba_ditahan",
+    "hpp", "laba_kotor", "pajak", "piutang", "penyusutan",
+)
 
-    Model bahasa lokal bisa gagal diam-diam - modelnya belum ditarik, potongan
-    terlalu panjang, JSON-nya tidak valid - dan hasilnya dokumen kosong tanpa
-    galat yang terlihat. Halaman lalu memakai nilai bawaan untuk plafon dan
-    agunan, dan angka bawaan itu tampil sebagai hasil analisa yang meyakinkan.
-    Itu kegagalan paling berbahaya di antara semua yang mungkin terjadi di sini.
 
-    Sapuan pola karena itu dijalankan sebagai jaring, bukan sebagai pengganti:
-    hanya bagian yang KOSONG yang diisi, sehingga hasil model tetap menang di
-    mana ia berhasil. Nota analisa adalah formulir dengan label tetap, jadi pola
-    justru lebih tepat di sana daripada model 3B.
+def _perbaiki_satuan(hasil: HasilDokumen, pola: HasilDokumen) -> None:
+    """Kembalikan pos lapkeu keluaran model ke rupiah penuh, dikalibrasi ke pola.
+
+    Laporan keuangan lazim disajikan "dalam jutaan rupiah". Instruksi untuk
+    mengalikannya kembali ada di prompt ekstraksi, tetapi ia cuma instruksi -
+    model kecil rutin mengabaikannya, dan hasilnya ekuitas Rp160.600 untuk
+    debitur berplafon Rp45 miliar. Angka itu tidak pernah ditolak siapa pun:
+    ia mengalir ke rasio, ke memo, dan tampil serapi angka yang benar.
+
+    Pengalinya TIDAK diterka dari besaran angka, melainkan diukur: pos yang
+    dibaca kedua jalur memberi perbandingan langsung pola/model, dan yang
+    perbandingannya jatuh dekat kelipatan seribu dianggap satu suara untuk
+    pengali itu. Cara ini tahan terhadap keluaran model yang campur satuan -
+    dan itu bentuk kegagalan yang benar-benar terjadi, bukan yang dibayangkan:
+    satu keluaran 3B pernah memuat ekuitas dalam jutaan dan total liabilitas
+    dalam rupiah penuh sekaligus. Pos yang perbandingannya tidak dekat
+    kelipatan seribu bukan salah satuan melainkan salah nilai, jadi ia tidak
+    ikut memilih dan tidak ikut dikoreksi.
     """
-    kurang = [
+    import math
+
+    kandidat = [
+        (k, float(pola.fakta[k]), float(hasil.fakta[k]))
+        for k in POS_LAPKEU
+        if isinstance(pola.fakta.get(k), (int, float)) and pola.fakta[k] > 0
+        and isinstance(hasil.fakta.get(k), (int, float)) and hasil.fakta[k] > 0
+    ]
+    hanya_model = [
+        k for k in POS_LAPKEU
+        if isinstance(hasil.fakta.get(k), (int, float)) and k not in pola.fakta
+    ]
+    if not hanya_model:
+        # Tidak ada pos yang hanya berasal dari model - pola menang di semuanya,
+        # jadi tidak ada yang perlu diskalakan.
+        return
+    if not kandidat:
+        hasil.catatan.append(
+            "Satuan pos dari model tidak bisa dikalibrasi: tidak ada pos yang "
+            f"dibaca kedua jalur. Nilai {', '.join(hanya_model)} dipakai apa adanya."
+        )
+        return
+
+    # Satu suara per pos, untuk pengali terdekat pada skala logaritmik.
+    TOLERANSI = 0.15  # ~+/-40%, cukup longgar untuk pembulatan penyajian
+    suara: dict[int, list[str]] = {}
+    for nama, nilai_pola, nilai_model in kandidat:
+        selisih = math.log10(nilai_pola / nilai_model)
+        for pengali in (1, 1_000, 1_000_000):
+            if abs(selisih - math.log10(pengali)) <= TOLERANSI:
+                suara.setdefault(pengali, []).append(nama)
+                break
+
+    if not suara:
+        hasil.catatan.append(
+            "Pos dari model tidak sebanding dengan hasil pola pada kelipatan "
+            f"seribu mana pun; {', '.join(hanya_model)} dipakai apa adanya."
+        )
+        return
+
+    pengali = max(suara, key=lambda f: len(suara[f]))
+    if pengali == 1:
+        return
+
+    for k in hanya_model:
+        hasil.fakta[k] = float(hasil.fakta[k]) * pengali
+    hasil.catatan.append(
+        f"{', '.join(hanya_model)} dari model dikalikan {pengali:,} ke rupiah penuh, "
+        f"dikalibrasi dari {', '.join(suara[pengali])} yang dibaca kedua jalur."
+    )
+
+
+def _utamakan_pola(
+    hasil: HasilDokumen, path_list: list[Path], jenis_manual: dict[str, str],
+    pola: HasilDokumen | None = None,
+) -> HasilDokumen:
+    """Jadikan sapuan pola sumber utama; hasil model hanya mengisi yang kosong.
+
+    Urutan ini kebalikan dari yang dipakai semula - dulu model yang menang
+    dan pola hanya jaring pengaman - dan alasannya empiris. Nota analisa
+    dan laporan keuangan di sini adalah formulir berlabel tetap: pola membaca
+    labelnya dan mengembalikan 16 pos dalam rupiah penuh, sementara model 3B
+    mengembalikan 4 pos dengan dua di antaranya meleset sejuta kali lipat.
+    Untuk dokumen semacam itu, "model dulu, pola menambal" berarti mendahulukan
+    sumber yang lebih sering salah.
+
+    Model tetap dipakai, bukan dibuang: ia unggul pada bagian yang tidak
+    berlabel tetap - akta, rekening koran naratif, dokumen di luar template -
+    dan di situlah ia mengisi field yang tidak ditemukan pola.
+    """
+    try:
+        pola = pola if pola is not None else baca_dengan_pola(path_list, jenis_manual)
+    except Exception as exc:
+        hasil.catatan.append(f"Sapuan pola gagal, hasil model dipakai apa adanya: {exc}")
+        return hasil
+
+    _perbaiki_satuan(hasil, pola)
+
+    # Per field, bukan per blok: pola bisa menemukan penjualan tetapi tidak
+    # ebitda, dan menolak seluruh sumbangan model hanya karena satu pos ada
+    # akan membuang yang justru dibutuhkan.
+    dari_model: list[str] = []
+    fakta = dict(pola.fakta)
+    sumber = dict(pola.sumber_fakta)
+    for k, v in hasil.fakta.items():
+        if k not in fakta and v not in (None, "", 0):
+            fakta[k] = v
+            sumber[k] = "dokumen"
+            dari_model.append(k)
+    hasil.fakta, hasil.sumber_fakta = fakta, sumber
+
+    pengajuan = dict(pola.pengajuan)
+    for k, v in (hasil.pengajuan or {}).items():
+        if k not in pengajuan and v not in (None, "", [], 0):
+            pengajuan[k] = v
+            dari_model.append(k)
+    hasil.pengajuan = pengajuan
+
+    hasil.fakta_tahun = pola.fakta_tahun or hasil.fakta_tahun
+    if pola.pemegang_saham:
+        hasil.pemegang_saham = pola.pemegang_saham
+    hasil.pengurus = pola.pengurus or hasil.pengurus
+
+    hasil.jalur = "pola+llm" if dari_model else "pola"
+    if dari_model:
+        hasil.catatan.append(
+            "Pola menjadi sumber utama; model bahasa melengkapi "
+            + ", ".join(sorted(set(dari_model))) + "."
+        )
+    else:
+        hasil.catatan.append(
+            "Seluruh field terbaca sapuan pola; hasil model tidak diperlukan."
+        )
+    return hasil
+
+
+# Pos yang harus ada sebelum sebuah pembacaan dianggap cukup. Bukan seluruh
+# POS_LAPKEU: sebagian pos memang tidak selalu tercetak, dan menuntut semuanya
+# berarti model dipanggil pada tiap pengajuan tanpa kecuali.
+POS_INTI = ("penjualan", "ekuitas", "total_aset")
+
+
+def _lubang_pola(pola: HasilDokumen) -> list[str]:
+    """Bagian yang tidak berhasil dibaca sapuan pola.
+
+    `fakta_tahun` sengaja tidak dihitung sebagai lubang. Ia hanya pernah diisi
+    jalur pola (lihat `baca_dengan_pola`); jalur model tidak pernah
+    menghasilkannya sama sekali, jadi memasukkannya ke daftar ini akan
+    memanggil model untuk sesuatu yang tidak mungkin ia perbaiki - dan pada
+    laporan satu periode, lubang itu selalu ada.
+    """
+    lubang = [
         nama for nama, ada in (
-            ("pos keuangan", bool(hasil.fakta)),
-            ("periode laporan", bool(hasil.fakta_tahun)),
-            ("isian nota analisa", bool(hasil.pengajuan)),
-            ("pemegang saham", bool(hasil.pemegang_saham)),
+            ("isian nota analisa", bool(pola.pengajuan)),
+            ("pemegang saham", bool(pola.pemegang_saham)),
         ) if not ada
     ]
-    if not kurang:
-        return hasil
+    kurang_inti = [k for k in POS_INTI if not pola.fakta.get(k)]
+    if kurang_inti:
+        lubang.append("pos keuangan inti (" + ", ".join(kurang_inti) + ")")
+    return lubang
+
+
+def baca_dokumen_pengajuan(
+    path_list: list[Path], jenis_manual: dict[str, str], *, boleh_llm: bool
+) -> HasilDokumen:
+    """Baca berkas pengajuan: pola sebagai pintu pertama, model bila kurang.
+
+    Urutannya soal ongkos, bukan soal mutu. Pola dan model sudah diadu pada
+    berkas demo: pola mengembalikan 16 pos keuangan, 22 isian nota, 6 pemegang
+    saham, dan 5 pengurus dalam 1,3 detik, sementara model 3B di CPU memakan
+    tujuh panggilan berurutan untuk hasil yang seluruhnya kalah pada
+    penggabungan. Memanggil model lebih dulu berarti membayar penuh untuk
+    pekerjaan yang dibuang.
+
+    Model tetap dipanggil ketika pola meninggalkan lubang - dokumen di luar
+    template, akta dengan tata letak lain, laporan yang labelnya tidak lazim -
+    dan di situ ia memang lebih baik. Yang berubah hanya ini: ia dibayar saat
+    dibutuhkan, bukan di muka.
+    """
+    pola = baca_dengan_pola(path_list, jenis_manual)
+    lubang = _lubang_pola(pola)
+
+    if not boleh_llm:
+        return pola
+    if not lubang:
+        pola.catatan.append(
+            "Sapuan pola membaca seluruh bagian yang dibutuhkan; model bahasa "
+            "tidak dipanggil. Jalankan ulang dengan berkas di luar template "
+            "untuk melihat jalur model."
+        )
+        return pola
 
     try:
-        pola = baca_dengan_pola(path_list, jenis_manual)
+        return baca_dengan_llm(path_list, jenis_manual, pola)
     except Exception as exc:
-        hasil.catatan.append(f"Sapuan pola cadangan gagal: {exc}")
-        return hasil
-
-    if not hasil.fakta and pola.fakta:
-        hasil.fakta = pola.fakta
-        hasil.sumber_fakta = pola.sumber_fakta
-    if not hasil.fakta_tahun:
-        hasil.fakta_tahun = pola.fakta_tahun
-    if not hasil.pengajuan:
-        hasil.pengajuan = pola.pengajuan
-    if not hasil.pemegang_saham:
-        hasil.pemegang_saham = pola.pemegang_saham
-        hasil.pengurus = hasil.pengurus or pola.pengurus
-
-    hasil.jalur = "llm+pola"
-    hasil.catatan.append(
-        "Model bahasa tidak menghasilkan " + ", ".join(kurang)
-        + ". Bagian itu diisi sapuan pola; periksa ulang sebelum dipakai untuk keputusan."
-    )
-    return hasil
+        # Model gagal bukan alasan membuang hasil pola yang sudah ada.
+        pola.catatan.append(
+            f"Model bahasa dipanggil untuk melengkapi {', '.join(lubang)} tetapi "
+            f"gagal ({exc}); hasil sapuan pola dipakai apa adanya."
+        )
+        return pola
 
 
 def jenis_unggahan(unggahan, jenis_manual: dict[str, str]) -> set[str]:
