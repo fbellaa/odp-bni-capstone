@@ -169,9 +169,16 @@ services:
       - "${UI_PORT:-8501}:8501"
     environment:
       # Bawaannya menunjuk Ollama di HOST, bukan di jaringan compose. Untuk
-      # memakai layanan `ollama` di atas, setel OLLAMA_HOST=http://ollama:11434
+      # memakai layanan `ollama` di atas, setel COPILOT_OLLAMA_URL=http://ollama:11434
       # (lihat catatan pada layanan itu).
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      #
+      # Sumbernya SENGAJA bukan ${OLLAMA_HOST}. Nama itu sudah dipakai server
+      # Ollama untuk alamat BIND, dan siapa pun yang menyetel OLLAMA_HOST=0.0.0.0
+      # di host - langkah yang justru diperlukan supaya container bisa
+      # menjangkaunya - akan melihat compose mengambil nilai itu dari shell dan
+      # mengirimkannya ke sini sebagai alamat TUJUAN. Container lalu menunjuk
+      # dirinya sendiri, dan sidebar melaporkan Ollama mati padahal ia hidup.
+      OLLAMA_HOST: ${COPILOT_OLLAMA_URL:-http://host.docker.internal:11434}
       COPILOT_PROFIL: ${COPILOT_PROFIL:-terpadu}
       COPILOT_MODEL_SAHABAT: ${COPILOT_MODEL_SAHABAT:-}
       COPILOT_MAKS_PUTARAN: ${COPILOT_MAKS_PUTARAN:-8}
