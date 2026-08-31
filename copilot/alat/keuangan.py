@@ -78,10 +78,17 @@ def hitung_rasio_keuangan(
         "interest_coverage": None if icr is None else round(icr, 4),
         "ebitda_margin": round(ebitda / penjualan, 4),
         "rumus": (
-            f"DER = utang berbunga {utang_berbunga:,.0f} / ekuitas {ekuitas:,.0f} = {der:.2f}x; "
+            f"DER berbunga = utang berbunga {utang_berbunga:,.0f} / ekuitas {ekuitas:,.0f} = {der:.2f}x; "
             f"EBITDA margin = {ebitda:,.0f} / {penjualan:,.0f} = {ebitda / penjualan:.2%}"
         ),
     }
+    if total_liabilitas is not None:
+        # Basis kedua, dan bukan sekadar pelengkap: ambang covenant serta fitur
+        # DER pada data latih model PD diturunkan dari `total_liabilities /
+        # ekuitas` (lihat pipelines/transform/silver.py). Menguji ambang itu
+        # dengan DER berbunga - yang pembilangnya bagian dari total liabilitas -
+        # selalu bias ke arah lolos.
+        hasil["der_total"] = round(float(total_liabilitas) / ekuitas, 4)
     if laba_bersih is not None:
         hasil["marjin_laba_bersih"] = round(float(laba_bersih) / penjualan, 4)
         hasil["roe"] = round(float(laba_bersih) / ekuitas, 4)
@@ -321,19 +328,42 @@ def periksa_bmpk(eksposur_grup_berjalan: float, limit_usulan: float) -> dict[str
 
 
 def periksa_covenant(
-    grade: str, der: float, dscr: float, interest_coverage: float | None = None
+    grade: str,
+    dscr: float,
+    der_total: float | None = None,
+    der: float | None = None,
+    interest_coverage: float | None = None,
 ) -> dict[str, Any]:
-    """Bandingkan rasio terhadap ambang covenant kelas rating."""
+    """Bandingkan rasio terhadap ambang covenant kelas rating.
+
+    `der_total` yang dipakai, bukan `der`. Ambang `der_maks` diturunkan dari
+    `fact_covenant` di lapisan emas, tempat DER berarti total liabilitas dibagi
+    ekuitas; menguji ambang itu dengan DER berbunga membandingkan dua besaran
+    yang berbeda dan hasilnya selalu condong lolos. `der` tetap diterima
+    sebagai cadangan - laporan tanpa baris total liabilitas memang ada - tetapi
+    basis yang dipakai selalu ikut dicatat pada hasil.
+    """
     grade = _grade_valid(grade)
     cov = par.COVENANT_PER_RATING[grade]
 
+    if der_total is not None:
+        der_uji, basis, label = float(der_total), "total_liabilitas", "DER total maksimum"
+    elif der is not None:
+        der_uji, basis, label = float(der), "utang_berbunga", "DER berbunga maksimum"
+    else:
+        raise GalatMasukan(
+            "der_total wajib diisi (total liabilitas / ekuitas, dari "
+            "hitung_rasio_keuangan). Bila laporan tidak memuat total "
+            "liabilitas, kirim `der` sebagai gantinya."
+        )
+
     butir = [
         {
-            "covenant": "DER maksimum",
-            "nilai": round(float(der), 4),
+            "covenant": label,
+            "nilai": round(der_uji, 4),
             "ambang": cov["der_maks"],
             "arah": "maksimum",
-            "lolos": float(der) <= cov["der_maks"],
+            "lolos": der_uji <= cov["der_maks"],
         },
         {
             "covenant": "DSCR minimum",
@@ -370,9 +400,14 @@ def periksa_covenant(
         "grade": grade,
         "frekuensi_uji": cov["uji"],
         "butir": butir,
+        "basis_der": basis,
         "lolos": not langgar,
         "dilanggar": langgar,
-        "rumus": f"Ambang covenant kelas {grade}: {cov}",
+        "rumus": (
+            f"Ambang covenant kelas {grade} atas DER basis {basis}: {cov}"
+            + ("" if basis == "total_liabilitas"
+               else " (cadangan: total liabilitas tidak tersedia)")
+        ),
     }
 
 

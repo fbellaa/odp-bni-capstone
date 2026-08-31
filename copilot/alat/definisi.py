@@ -162,14 +162,22 @@ DEFINISI: list[dict[str, Any]] = [
     ),
     _fungsi(
         "periksa_covenant",
-        "Periksa DER, DSCR, dan interest coverage terhadap ambang covenant kelas rating.",
+        "Periksa DER, DSCR, dan interest coverage terhadap ambang covenant kelas rating. "
+        "Pakai der_total, bukan der: ambangnya diturunkan atas basis total liabilitas.",
         {
             "grade": {"type": "string", "description": "Kelas rating internal, misal 'BBB'."},
-            "der": _angka("DER, dari hitung_rasio_keuangan."),
+            "der_total": _angka(
+                "DER total (total liabilitas / ekuitas), field `der_total` dari "
+                "hitung_rasio_keuangan. Inilah basis ambang covenant."
+            ),
             "dscr": _angka("DSCR, dari hitung_dscr."),
+            "der": _angka(
+                "Cadangan saja: DER berbunga (utang berbunga / ekuitas). Kirim ini "
+                "HANYA bila laporan tidak memuat total liabilitas."
+            ),
             "interest_coverage": _angka("Interest coverage, dari hitung_rasio_keuangan."),
         },
-        ["grade", "der", "dscr"],
+        ["grade", "der_total", "dscr"],
     ),
     _fungsi(
         "kewenangan_komite",

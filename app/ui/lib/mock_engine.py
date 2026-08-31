@@ -502,7 +502,7 @@ def recommend_limit_pricing(pengajuan: dict) -> HasilSkor:
         catatan.append("Pertanggungan agunan tipis; pertimbangkan tambahan agunan atau penjaminan korporasi.")
     if der > cov["der_maks"]:
         catatan.append(
-            f"DER {_x(der)} sudah di atas ambang covenant pita {grade.lower()} "
+            f"DER total {_x(der)} sudah di atas ambang covenant pita {grade.lower()} "
             f"({_x(cov['der_maks'])})."
         )
 
@@ -615,7 +615,7 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
     # 5 — covenant
     pelanggaran = []
     if hasil.der > cov["der_maks"]:
-        pelanggaran.append(f"DER {_x(hasil.der)} > maks {_x(cov['der_maks'])}")
+        pelanggaran.append(f"DER total {_x(hasil.der)} > maks {_x(cov['der_maks'])}")
     if hasil.icr < cov["icr_min"]:
         pelanggaran.append(f"ICR {_x(hasil.icr)} < min {_x(cov['icr_min'])}")
     if hasil.dscr < cov["dscr_min"]:
@@ -624,7 +624,7 @@ def check_credit_policy(hasil: HasilSkor, pengajuan: dict) -> list[dict]:
         "aspek": "Covenant",
         "status": LOLOS if not pelanggaran else PENYESUAIAN,
         "temuan": "; ".join(pelanggaran) if pelanggaran
-                  else f"DER maks {_x(cov['der_maks'])} · ICR min {_x(cov['icr_min'])} · "
+                  else f"DER total maks {_x(cov['der_maks'])} · ICR min {_x(cov['icr_min'])} · "
                        f"DSCR min {_x(cov['dscr_min'])}",
         "aturan": f"Pita {hasil.grade.lower()} wajib memuat covenant DER maksimum "
                   f"{_x(cov['der_maks'])} dan ICR minimum {_x(cov['icr_min'])}, "

@@ -113,7 +113,9 @@ with c2:
                                            key=lambda v: abs(v - int(dasar["tenor_bulan"])))))
     ebitda_margin = st.slider("EBITDA margin", 0.04, 0.26, float(dasar["ebitda_margin"]),
                               step=0.001, format="%.3f")
-    der = st.slider("Debt to equity ratio", 0.3, 4.0, float(dasar["der"]), step=0.01)
+    der = st.slider("DER total (total liabilitas / ekuitas)", 0.3, 4.0,
+                float(dasar["der"]), step=0.01,
+                help="Basis yang dipakai model PD dan ambang covenant. Agen memakai DER berbunga — utang berbunga saja — jadi angkanya lebih rendah.")
 with c3:
     jenis_agunan = st.selectbox(
         "Struktur agunan", dummy_data.JENIS_AGUNAN,
@@ -292,7 +294,7 @@ with kol_bmpk:
     st.markdown("**Covenant wajib pita " + hasil.grade.lower() + "**")
     st.dataframe(
         pd.DataFrame([
-            {"Covenant": "Debt to equity maksimum", "Ambang": kali(hasil.covenant["der_maks"]),
+            {"Covenant": "DER total maksimum", "Ambang": kali(hasil.covenant["der_maks"]),
              "Posisi": kali(hasil.der)},
             {"Covenant": "Interest coverage minimum", "Ambang": kali(hasil.covenant["icr_min"]),
              "Posisi": kali(hasil.icr)},

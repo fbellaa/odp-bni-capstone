@@ -42,7 +42,13 @@ class JejakAlat:
         argumen = ", ".join(f"{k}={v}" for k, v in self.argumen.items())
         if self.galat:
             return f"{self.nama}({argumen}) -> GAGAL: {self.galat}"
-        return f"{self.nama}({argumen}) -> {self.hasil.get('rumus', self.hasil)}"
+        # Tool pemeriksa mengembalikan `lolos` terpisah dari `rumus`, dan
+        # `rumus`-nya berisi ambang - bukan putusan. Tanpa baris ini, sebuah
+        # pemeriksaan yang gagal tampil dengan teks ambang yang sama persis
+        # dengan yang lolos, dan pembaca jejak menyimpulkan sebaliknya.
+        putusan = self.hasil.get("lolos")
+        awalan = "" if putusan is None else ("LOLOS: " if putusan else "TIDAK LOLOS: ")
+        return f"{self.nama}({argumen}) -> {awalan}{self.hasil.get('rumus', self.hasil)}"
 
 
 @dataclass
