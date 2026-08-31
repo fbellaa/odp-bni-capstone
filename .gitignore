@@ -5,6 +5,7 @@ data/
 
 # secret key
 .env
+.env.example
 *.key
 
 # python
@@ -25,3 +26,6 @@ dbt_packages/
 
 .DS_Store
 .vscode/
+
+
+docker-compose-yaml

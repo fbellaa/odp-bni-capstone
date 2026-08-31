@@ -336,8 +336,10 @@ if jalankan:
                 # Agen membaca fakta sebagai teks datar. Tanpa dokumen, berkas
                 # kosong tetap dikirim supaya kontraknya tidak berubah dan agen
                 # tahu bahwa dokumen memang tidak ada.
-                berkas_agen = (dokumen.berkas if dokumen and dokumen.berkas
-                               else ck.BerkasPengajuan(nama_debitur=entitas.get("nama_debitur")))
+                # `fitur`, bukan `entitas`: turunan seperti utang berbunga
+                # eksisting hanya ada di sana, dan tanpanya agen menghitung
+                # rasio atas nol.
+                berkas_agen = pc.berkas_untuk_agen(dokumen, fitur)
                 konteks = ck.memo_copilot.konteks_pengajuan(berkas_agen, pengajuan_agen, None)
                 penampung = st.empty()
 

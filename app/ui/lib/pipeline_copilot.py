@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from lib import copilot_lokal as ck
@@ -1290,6 +1291,89 @@ def baca_dokumen_pengajuan(
             f"gagal ({exc}); hasil sapuan pola dipakai apa adanya."
         )
         return pola
+
+
+def berkas_untuk_agen(dokumen: HasilDokumen | None, entitas: dict | None = None):
+    """`BerkasPengajuan` untuk konteks agen, dari jalur mana pun dokumen dibaca.
+
+    `konteks_pengajuan()` membaca angka keuangan lewat `berkas.lapkeu_terbaru`,
+    dan `berkas` hanya pernah diisi jalur model - sapuan pola mengembalikan
+    fakta sebagai dict datar, tanpa objek skema. Selama jalur model selalu
+    dijalankan lebih dulu, kekurangan itu tidak pernah terlihat. Begitu pola
+    jadi pintu pertama, agen menerima berkas kosong dan mengirim nol ke setiap
+    tool - bukan karena salah membaca, melainkan karena tidak diberi apa pun.
+
+    Fungsi ini menutup celah itu: bila `berkas` sudah ada ia dipakai apa adanya,
+    kalau tidak, satu `BerkasPengajuan` disusun dari fakta hasil pola.
+    """
+    if dokumen is not None and dokumen.berkas is not None:
+        return dokumen.berkas
+
+    entitas = entitas or {}
+    nama = (dokumen.fakta.get("nama_debitur") if dokumen else None)         or entitas.get("nama_debitur")
+    berkas = ck.BerkasPengajuan(nama_debitur=nama)
+    if dokumen is None:
+        return berkas
+
+    try:
+        from copilot.dokumen import skema
+    except Exception:
+        # Paket copilot tidak bisa diimpor - berkas bernama saja sudah cukup,
+        # dan jalur agen memang tidak menyala dalam keadaan itu.
+        return berkas
+
+    fakta = dokumen.fakta
+    pos = {
+        medan: float(fakta[medan])
+        for medan in skema.LaporanKeuangan.model_fields
+        if isinstance(fakta.get(medan), (int, float))
+    }
+    # EBITDA dan utang berbunga tidak pernah tercetak sebagai satu baris pada
+    # laporan in-house, jadi pola tidak bisa mengutipnya. Sisa aplikasi sudah
+    # menurunkannya - `ebitda_margin` dari laba kotor dan penyusutan,
+    # `utang_berbunga_eksisting` sebagai porsi total liabilitas - dan angka
+    # turunan itulah yang dipakai mesin skoring. Tidak mengopernya ke agen
+    # berarti agen menghitung rasio atas nol sementara halaman lain memakai
+    # angka yang ada: dua jawaban berbeda untuk pengajuan yang sama.
+    if "ebitda" not in pos and entitas.get("ebitda_margin") and pos.get("penjualan"):
+        pos["ebitda"] = float(entitas["ebitda_margin"]) * pos["penjualan"]
+    if "utang_berbunga" not in pos and entitas.get("utang_berbunga_eksisting"):
+        pos["utang_berbunga"] = float(entitas["utang_berbunga_eksisting"])
+    if pos:
+        berkas.dokumen.append(skema.DokumenTerstruktur(
+            jenis="laporan_keuangan",
+            sumber=skema.Sumber(berkas="sapuan pola", jumlah_halaman=0),
+            laporan_keuangan=skema.LaporanKeuangan(
+                periode=str(max(dokumen.fakta_tahun)) if dokumen.fakta_tahun else None,
+                **pos,
+            ),
+        ))
+
+    if dokumen.pemegang_saham or dokumen.pengurus:
+        berkas.dokumen.append(skema.DokumenTerstruktur(
+            jenis="akta",
+            sumber=skema.Sumber(berkas="sapuan pola", jumlah_halaman=0),
+            akta=skema.Akta(
+                nama_perusahaan=nama,
+                alamat_operasional=(dokumen.pengajuan or {}).get("alamat_usaha"),
+                pemegang_saham=[
+                    skema.PemegangSaham(
+                        nama=p.get("nama", "-"),
+                        # `pemegang_saham` menyimpan porsi sebagai pecahan;
+                        # skema akta memakai persen.
+                        persentase=(p.get("porsi") or 0) * 100 or None,
+                        jenis=p.get("jenis") or "tidak_diketahui",
+                    ) for p in dokumen.pemegang_saham
+                ],
+                pengurus=[
+                    skema.Pengurus(
+                        nama=teks.split("—")[0].strip(),
+                        jabatan=(teks.split("—")[1].strip() if "—" in teks else None),
+                    ) for teks in dokumen.pengurus
+                ],
+            ),
+        ))
+    return berkas
 
 
 def jenis_unggahan(unggahan, jenis_manual: dict[str, str]) -> set[str]:

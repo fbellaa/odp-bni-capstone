@@ -180,7 +180,7 @@ def tulis_narasi(
 # ------------------------------------------------------------- perhitungan
 # Angka mana dari hasil tool mana yang naik ke tabel ringkas memo.
 SOROTAN: list[tuple[str, str, str, str]] = [
-    ("hitung_rasio_keuangan", "der", "DER", "kali"),
+    ("hitung_rasio_keuangan", "der", "DER berbunga", "kali"),
     ("hitung_rasio_keuangan", "interest_coverage", "Interest coverage", "kali"),
     ("hitung_rasio_keuangan", "ebitda_margin", "Marjin EBITDA", "persen"),
     ("hitung_angsuran", "kewajiban_tahunan", "Kewajiban tahunan fasilitas", "rupiah"),
